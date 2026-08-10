@@ -40,6 +40,16 @@ class ZktecoDevice extends Model
         return $this->hasMany(ZktecoDeviceUser::class, 'device_id');
     }
 
+    public function heartbeats(): HasMany
+    {
+        return $this->hasMany(ZktecoHeartbeatLog::class, 'device_id');
+    }
+
+    public function protocolLogs(): HasMany
+    {
+        return $this->hasMany(ZktecoAdmsLog::class, 'device_id');
+    }
+
     public function isOnline(): bool
     {
         if (!$this->last_seen_at) {

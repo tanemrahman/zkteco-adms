@@ -9,12 +9,14 @@ use TanemRahman\ZktecoAdms\Models\ZktecoDevice;
 use TanemRahman\ZktecoAdms\Models\ZktecoHeartbeatLog;
 use TanemRahman\ZktecoAdms\Services\AdmsService;
 use TanemRahman\ZktecoAdms\Services\CommandService;
+use TanemRahman\ZktecoAdms\Services\DeviceIdentityService;
 
 class CommandController extends Controller
 {
     public function __construct(
         private AdmsService $adms,
         private CommandService $commands,
+        private DeviceIdentityService $identity,
     ) {
     }
 
@@ -24,7 +26,7 @@ class CommandController extends Controller
         $device = $request->attributes->get('adms_device');
 
         if ($info = $request->query('INFO')) {
-            $this->adms->syncInfo($device, (string) $info);
+            $this->identity->syncInfo($device, (string) $info);
         }
 
         $pending = $this->commands->pending($device);
@@ -73,6 +75,11 @@ class CommandController extends Controller
             $normalized = [];
             foreach ($reply as $k => $v) {
                 $normalized[ucfirst(strtolower($k)) === 'Id' ? 'ID' : ucfirst(strtolower($k))] = $v;
+            }
+
+            // INFO command replies often include firmware counters in CMD / body.
+            if (!empty($normalized['CMD']) && strtoupper((string) $normalized['CMD']) === 'INFO') {
+                $this->identity->syncInfo($device, (string) ($normalized['Return'] ?? $line));
             }
 
             if ($this->commands->recordReply($normalized)) {

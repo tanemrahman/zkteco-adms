@@ -8,11 +8,16 @@ use Symfony\Component\HttpFoundation\Response;
 use TanemRahman\ZktecoAdms\Http\Requests\AdmsDataRequest;
 use TanemRahman\ZktecoAdms\Models\ZktecoDevice;
 use TanemRahman\ZktecoAdms\Services\AdmsService;
+use TanemRahman\ZktecoAdms\Services\DeviceIdentityService;
+use TanemRahman\ZktecoAdms\Services\UserSyncService;
 
 class AdmsController extends Controller
 {
-    public function __construct(private AdmsService $adms)
-    {
+    public function __construct(
+        private AdmsService $adms,
+        private DeviceIdentityService $identity,
+        private UserSyncService $userSync,
+    ) {
     }
 
     public function handshake(Request $request): Response
@@ -20,7 +25,7 @@ class AdmsController extends Controller
         /** @var ZktecoDevice $device */
         $device = $request->attributes->get('adms_device');
 
-        $this->adms->captureHandshake($device, $request);
+        $this->identity->captureHandshake($device, $request);
         $body = $this->adms->buildInitOptions($device);
 
         $this->adms->logRequest([
@@ -80,21 +85,7 @@ class AdmsController extends Controller
 
     private function syncOperlog(AdmsDataRequest $request, ZktecoDevice $device, string $table): Response
     {
-        $parsed = $this->adms->parseOperlog($request->getContent());
-        $users = 0;
-
-        foreach ($parsed as $row) {
-            $tag = $row['tag'];
-            if (in_array($tag, ['USER', 'USERINFO'], true)) {
-                $this->adms->upsertDeviceUser($device, $row['fields']);
-                $users++;
-            } elseif (in_array($tag, ['FP', 'FINGERPRINT', 'FACE', 'BIOPHOTO', 'BIODATA_FP', 'BIODATA_FACE'], true)) {
-                $this->adms->markTemplate($device, $tag, $row['fields']);
-            }
-        }
-
-        $this->adms->updateStamp($device, $table === 'OPERLOG' ? 'OPERLOG' : $table, $request->stamp());
-        $response = $this->adms->dataOk(count($parsed));
+        $result = $this->userSync->receiveOperlog($device, $request, $table);
 
         $this->adms->logRequest([
             'device_id' => $device->id,
@@ -103,23 +94,27 @@ class AdmsController extends Controller
             'method' => 'POST',
             'table_name' => $table,
             'query' => $request->getQueryString(),
-            'body' => $request->getContent(),
-            'response' => $response,
-            'records_count' => count($parsed),
-            'message' => "operlog users={$users}",
+            'body' => $result['body'],
+            'response' => $result['response'],
+            'records_count' => $result['count'],
+            'level' => ($result['count'] > 0 || trim($result['body']) === '') ? 'info' : 'warning',
+            'message' => sprintf(
+                'users=%d templates=%d ops=%d stamp=%s',
+                $result['users'],
+                $result['templates'],
+                $result['operations'],
+                $result['stamp_advanced'] ? 'advanced' : 'held'
+            ),
             'ip' => $request->ip(),
         ]);
 
-        return $this->text($response);
+        return $this->text($result['response']);
     }
 
     private function receiveOptions(Request $request, ZktecoDevice $device): Response
     {
         $body = $request->getContent();
-        // ~DeviceName=...,MAC=...
-        if (preg_match('/DeviceName=([^\r\n,~]+)/i', $body, $m)) {
-            $device->forceFill(['device_name' => trim($m[1])])->saveQuietly();
-        }
+        $this->identity->captureOptions($device, $body);
 
         $response = $this->adms->ok();
         $this->adms->logRequest([

@@ -217,15 +217,62 @@ ZKTECO_ADMS_LOG_HEARTBEATS=false
 
 ## How to design your app around this package
 
-Think of this package as the **ingestion layer**. Your Laravel app owns UX & business rules.
+Think of this package as the **ingestion + device control layer**. Your Laravel app owns UX & business rules.
+
+### Facade API (recommended)
+
+```php
+use TanemRahman\ZktecoAdms\ZktecoAdms;
+
+// Add / update user on device (PIN + name + card…)
+ZktecoAdms::addUser('DEVICE-SN', [
+    'pin' => 1001,
+    'name' => 'Karim',
+    'privilege' => 0,      // 0=user, 14=admin
+    'password' => '',
+    'card' => '',
+]);
+
+ZktecoAdms::deleteUser('DEVICE-SN', 1001);
+
+// Fingerprint / face template push (raw TMP from another device or export)
+ZktecoAdms::addFingerprint('DEVICE-SN', [
+    'pin' => 1001,
+    'fid' => 0,
+    'tmp' => $base64OrHexTemplate,
+]);
+
+ZktecoAdms::addFace('DEVICE-SN', [
+    'pin' => 1001,
+    'fid' => 0,
+    'tmp' => $faceTemplate,
+]);
+
+ZktecoAdms::deleteFingerprint('DEVICE-SN', 1001, 0);
+ZktecoAdms::deleteFace('DEVICE-SN', 1001, 0);
+
+// Device control
+ZktecoAdms::reboot('DEVICE-SN');
+ZktecoAdms::syncTime('DEVICE-SN');
+ZktecoAdms::info('DEVICE-SN');
+ZktecoAdms::check('DEVICE-SN');          // re-handshake
+ZktecoAdms::clearLog('DEVICE-SN');       // clear attendance on device
+ZktecoAdms::clearData('DEVICE-SN');      // clear operation data
+ZktecoAdms::queryUsers('DEVICE-SN');     // ask device to re-upload USERINFO
+ZktecoAdms::queryAttlog('DEVICE-SN', '2026-08-01 00:00:00', '2026-08-10 23:59:59');
+ZktecoAdms::resetStamps('DEVICE-SN');    // force re-upload on next handshake
+```
+
+Device picks commands on the next `getrequest` poll (~every 10 seconds).
 
 ### Suggested screens (you build these)
 
 1. **Devices** — list `ZktecoDevice`, show online/offline from `last_seen_at`
 2. **Live punches** — paginate `ZktecoTransaction` where `source = adms`
-3. **Device users** — show `ZktecoDeviceUser` roster
-4. **Protocol logs** — debug with `ZktecoAdmsLog` (dev only)
-5. **Commands** — enqueue reboot / clear log from admin
+3. **Device users** — show `ZktecoDeviceUser` roster + “Add user” form that calls `ZktecoAdms::addUser`
+4. **Biometrics** — enroll face/finger on device, or push templates via `addFace` / `addFingerprint`
+5. **Protocol logs** — debug with `ZktecoAdmsLog` (dev only)
+6. **Commands** — show pending queue from `ZktecoDeviceCommand`
 
 ### Example: Devices index (controller sketch)
 
@@ -242,14 +289,23 @@ public function index()
 }
 ```
 
-In Blade / React:
+### Example: Add user from your admin form
 
 ```php
-@foreach ($devices as $device)
-  {{ $device->name }} — {{ $device->serial }}
-  {{ $device->isOnline() ? 'Online' : 'Offline' }}
-  punches: {{ $device->transaction_count }}
-@endforeach
+use TanemRahman\ZktecoAdms\ZktecoAdms;
+
+public function storeUser(Request $request, string $serial)
+{
+    $data = $request->validate([
+        'pin' => 'required',
+        'name' => 'required|string|max:100',
+        'card' => 'nullable|string',
+    ]);
+
+    ZktecoAdms::addUser($serial, $data);
+
+    return back()->with('success', 'User queued to device.');
+}
 ```
 
 ### Example: Today's punches
@@ -279,7 +335,6 @@ $employee = Employee::where('biometric_emp_id', $txn->user_id)->first();
 ### React to punches in real time (recommended)
 
 ```php
-// app/Providers/AppServiceProvider.php  (or EventServiceProvider)
 use TanemRahman\ZktecoAdms\Events\TransactionsReceived;
 
 Event::listen(TransactionsReceived::class, function (TransactionsReceived $e) {
@@ -287,41 +342,67 @@ Event::listen(TransactionsReceived::class, function (TransactionsReceived $e) {
     // $e->saved   — how many new rows
     // $e->pins    — list of device PINs in this batch
     // $e->source  — "adms"
-
-    // Build daily attendance, notify manager, sync payroll, etc.
 });
 ```
-
-### Send a command to a device
-
-```php
-use TanemRahman\ZktecoAdms\Models\ZktecoDevice;
-use TanemRahman\ZktecoAdms\Services\CommandService;
-
-$device = ZktecoDevice::where('serial', 'XXXXXXXX')->firstOrFail();
-$commands = app(CommandService::class);
-
-$commands->reboot($device);
-// or
-$commands->enqueue($device, 'DATA QUERY ATTLOG StartTime=2026-08-01 00:00:00', 'QUERY');
-```
-
-The device picks commands up on the next `getrequest` poll (~every 10s).
 
 ---
 
 ## Artisan
 
 ```bash
+# Devices
+php artisan zkteco-adms:devices
+php artisan zkteco-adms:devices --register=SN123 --name="Gate 1"
+php artisan zkteco-adms:devices --reset-stamp=SN123
+php artisan zkteco-adms:devices --reset-stamp=all
+php artisan zkteco-adms:devices --delete=SN123
+
+# Commands / users
+php artisan zkteco-adms:commands --list
+php artisan zkteco-adms:commands --sn=SN123 --enqueue=info
+php artisan zkteco-adms:commands --sn=SN123 --enqueue=reboot
+php artisan zkteco-adms:commands --sn=SN123 --enqueue=sync-time
+php artisan zkteco-adms:commands --sn=SN123 --enqueue=clear-log
+php artisan zkteco-adms:commands --sn=SN123 --enqueue=query-users
+php artisan zkteco-adms:commands --sn=SN123 --add-user=1001 --user-name=Karim
+php artisan zkteco-adms:commands --sn=SN123 --delete-user=1001
+php artisan zkteco-adms:commands --requeue-stale
+php artisan zkteco-adms:commands --prune
+
+# Legacy maintain helper
 php artisan zkteco-adms:maintain --list-devices
-php artisan zkteco-adms:maintain --requeue-stale
-php artisan zkteco-adms:maintain --prune
 ```
 
 Scheduled automatically:
 
 - every 30 min → requeue stale commands  
 - daily 02:00 → prune old protocol / heartbeat logs  
+
+---
+
+## Full ADMS feature list (this package)
+
+| Feature | Status |
+|---------|--------|
+| `/iclock` handshake + options | ✅ |
+| ATTLOG punch ingest + dedupe | ✅ |
+| OPERLOG / USERINFO sync → DB | ✅ |
+| FP / Face template flags from device | ✅ |
+| fdata / registry / push / ping | ✅ |
+| Auto-register device by SN | ✅ |
+| Comm key auth | ✅ |
+| Protocol + heartbeat logs | ✅ |
+| Command queue (getrequest / devicecmd) | ✅ |
+| Add / update / delete user | ✅ |
+| Push fingerprint template | ✅ |
+| Push face template | ✅ |
+| Query users / attlog from device | ✅ |
+| Reboot / CHECK / INFO / sync time | ✅ |
+| Clear log / clear data | ✅ |
+| Reset sync stamps | ✅ |
+| Pre-register / delete device (artisan) | ✅ |
+| Facade `ZktecoAdms::…` | ✅ |
+| Admin UI | ❌ (build in your app) |
 
 ---
 

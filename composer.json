@@ -27,7 +27,10 @@
         "laravel": {
             "providers": [
                 "TanemRahman\\ZktecoAdms\\Providers\\ZktecoAdmsServiceProvider"
-            ]
+            ],
+            "aliases": {
+                "ZktecoAdms": "TanemRahman\\ZktecoAdms\\ZktecoAdms"
+            }
         }
     },
     "minimum-stability": "stable"

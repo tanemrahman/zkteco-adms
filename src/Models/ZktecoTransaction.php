@@ -11,7 +11,7 @@ class ZktecoTransaction extends Model
     protected $table = 'zkteco_transactions';
 
     protected $fillable = [
-        'device_id', 'user_id', 'timestamp', 'status', 'verify',
+        'device_id', 'user_id', 'timestamp', 'status', 'verify', 'workcode',
         'source', 'terminal_sn',
     ];
 

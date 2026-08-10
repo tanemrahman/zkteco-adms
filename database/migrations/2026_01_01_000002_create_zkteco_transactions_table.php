@@ -19,6 +19,7 @@ return new class extends Migration
             $table->dateTime('timestamp');
             $table->tinyInteger('status')->default(0); // punch state
             $table->integer('verify')->nullable();
+            $table->string('workcode', 64)->nullable();
             $table->string('source')->default('adms')->index(); // adms | biotime
             $table->string('terminal_sn')->nullable()->index();
             $table->timestamps();

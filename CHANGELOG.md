@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.3.0 — 2026-08-10
+
+### Fixed
+- User / fingerprint / face commands no longer optimistic-write `zkteco_device_users` before the device confirms — roster updates only on successful `devicecmd` reply (or OPERLOG upload)
+
+### Added
+- ATTPHOTO binary photos saved to disk + `zkteco_attphotos` table + `AttendancePhotoReceived` event
+- `workcode` column on `zkteco_transactions` (parsed from ATTLOG)
+
+### Config
+- `zkteco-adms.attphoto.enabled|disk|path` (`ZKTECO_ADMS_ATTPHOTO*`)
+
 ## 1.2.0 — 2026-08-10
 
 ### Changed

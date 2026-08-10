@@ -6,10 +6,13 @@ use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
+use TanemRahman\ZktecoAdms\Events\AttendancePhotoReceived;
 use TanemRahman\ZktecoAdms\Events\DeviceRegistered;
 use TanemRahman\ZktecoAdms\Events\TransactionsReceived;
 use TanemRahman\ZktecoAdms\Jobs\ProcessTransactionsReceived;
 use TanemRahman\ZktecoAdms\Models\ZktecoAdmsLog;
+use TanemRahman\ZktecoAdms\Models\ZktecoAttphoto;
 use TanemRahman\ZktecoAdms\Models\ZktecoDevice;
 use TanemRahman\ZktecoAdms\Models\ZktecoDeviceUser;
 use TanemRahman\ZktecoAdms\Models\ZktecoTransaction;
@@ -203,6 +206,7 @@ class AdmsService
                 'timestamp' => $normalized,
                 'status' => $r['status'],
                 'verify' => $r['verify'],
+                'workcode' => $this->normalizeWorkcode($r['workcode'] ?? null),
                 'source' => $source,
                 'terminal_sn' => $device->serial,
                 'created_at' => now(),
@@ -258,6 +262,7 @@ class AdmsService
                     'timestamp' => $row['timestamp'],
                     'status' => $row['status'],
                     'verify' => $row['verify'],
+                    'workcode' => $row['workcode'] ?? null,
                 ];
             }
         }
@@ -490,6 +495,150 @@ class AdmsService
         } catch (\Throwable $e) {
             Log::warning('[ZKTeco ADMS] Failed to write protocol log: ' . $e->getMessage());
         }
+    }
+
+    /**
+     * Push SDK ATTPHOTO body:
+     *   PIN=YYYYMMDDHHNNSS-UID\tSN=…\tsize=N\tCMD=uploadphoto\0[JPEG bytes]
+     *
+     * @return array{
+     *   pin:?string,
+     *   pin_raw:string,
+     *   captured_at:?\Carbon\Carbon,
+     *   size:int,
+     *   cmd:?string,
+     *   sn:?string,
+     *   binary:string
+     * }|null
+     */
+    public function parseAttphoto(string $body): ?array
+    {
+        if ($body === '') {
+            return null;
+        }
+
+        $nullPos = strpos($body, "\0");
+        if ($nullPos !== false) {
+            $header = substr($body, 0, $nullPos);
+            $binary = substr($body, $nullPos + 1);
+        } else {
+            $jpeg = strpos($body, "\xFF\xD8\xFF");
+            if ($jpeg === false) {
+                return null;
+            }
+            $header = substr($body, 0, $jpeg);
+            $binary = substr($body, $jpeg);
+        }
+
+        $fields = [];
+        foreach (preg_split('/[\t\s]+/', trim($header)) ?: [] as $part) {
+            if ($part === '' || ! str_contains($part, '=')) {
+                continue;
+            }
+            [$k, $v] = explode('=', $part, 2);
+            $fields[strtoupper(trim($k))] = trim($v);
+        }
+
+        $declared = isset($fields['SIZE']) ? (int) $fields['SIZE'] : 0;
+        if ($declared > 0 && strlen($binary) >= $declared) {
+            $binary = substr($binary, 0, $declared);
+        }
+
+        if ($binary === '') {
+            return null;
+        }
+
+        $pinRaw = (string) ($fields['PIN'] ?? '');
+        $userPin = null;
+        $capturedAt = null;
+
+        if (preg_match('/^(\d{14})-(\d+)$/', $pinRaw, $m)) {
+            try {
+                $capturedAt = Carbon::createFromFormat('YmdHis', $m[1]);
+            } catch (\Throwable) {
+                $capturedAt = null;
+            }
+            $userPin = $m[2];
+        } elseif (preg_match('/^(\d{14})$/', $pinRaw, $m)) {
+            try {
+                $capturedAt = Carbon::createFromFormat('YmdHis', $m[1]);
+            } catch (\Throwable) {
+                $capturedAt = null;
+            }
+        } elseif ($pinRaw !== '' && ctype_digit($pinRaw)) {
+            $userPin = $pinRaw;
+        }
+
+        return [
+            'pin' => $userPin,
+            'pin_raw' => $pinRaw,
+            'captured_at' => $capturedAt,
+            'size' => strlen($binary),
+            'cmd' => $fields['CMD'] ?? null,
+            'sn' => $fields['SN'] ?? null,
+            'binary' => $binary,
+        ];
+    }
+
+    /**
+     * Persist an attendance photo to disk + `zkteco_attphotos`.
+     *
+     * @return array{saved:bool,photo:?ZktecoAttphoto,bytes:int,reason:?string}
+     */
+    public function storeAttphoto(ZktecoDevice $device, string $body, ?string $stamp = null): array
+    {
+        if (! config('zkteco-adms.attphoto.enabled', true)) {
+            return ['saved' => false, 'photo' => null, 'bytes' => strlen($body), 'reason' => 'disabled'];
+        }
+
+        $parsed = $this->parseAttphoto($body);
+        if (! $parsed) {
+            return ['saved' => false, 'photo' => null, 'bytes' => strlen($body), 'reason' => 'parse_failed'];
+        }
+
+        $disk = (string) config('zkteco-adms.attphoto.disk', 'local');
+        $base = trim((string) config('zkteco-adms.attphoto.path', 'zkteco/attphotos'), '/');
+        $date = ($parsed['captured_at'] ?? now())->format('Y/m/d');
+        $pinPart = $parsed['pin'] ?: 'unknown';
+        $stampPart = preg_replace('/[^0-9A-Za-z_-]/', '', (string) ($stamp ?: now()->format('YmdHis')));
+        $filename = sprintf('%s_%s_%s.jpg', $device->serial, $pinPart, $stampPart ?: uniqid('p'));
+        $path = $base . '/' . $date . '/' . $filename;
+
+        try {
+            Storage::disk($disk)->put($path, $parsed['binary']);
+        } catch (\Throwable $e) {
+            Log::warning('[ZKTeco ADMS] ATTPHOTO save failed: ' . $e->getMessage());
+
+            return ['saved' => false, 'photo' => null, 'bytes' => $parsed['size'], 'reason' => 'storage_failed'];
+        }
+
+        $photo = ZktecoAttphoto::create([
+            'device_id' => $device->id,
+            'serial' => $device->serial,
+            'pin' => $parsed['pin'],
+            'pin_raw' => $parsed['pin_raw'] ?: null,
+            'captured_at' => $parsed['captured_at'],
+            'disk' => $disk,
+            'path' => $path,
+            'size' => $parsed['size'],
+            'cmd' => $parsed['cmd'],
+            'stamp' => $stamp,
+        ]);
+
+        event(new AttendancePhotoReceived($device, $photo));
+
+        return ['saved' => true, 'photo' => $photo, 'bytes' => $parsed['size'], 'reason' => null];
+    }
+
+    protected function normalizeWorkcode(mixed $value): ?string
+    {
+        if ($value === null) {
+            return null;
+        }
+
+        $value = trim((string) $value);
+
+        return $value === '' ? null : substr($value, 0, 64);
     }
 
     protected function splitLines(string $body): array

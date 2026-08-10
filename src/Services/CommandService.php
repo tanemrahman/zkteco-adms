@@ -83,18 +83,147 @@ class CommandService
 
         $return = isset($reply['Return']) ? (int) $reply['Return'] : null;
 
+        $status = ($return === null || $return >= 0)
+            ? ZktecoDeviceCommand::STATUS_DONE
+            : ZktecoDeviceCommand::STATUS_FAILED;
+
         $command->forceFill([
             'return_code' => $return,
             'return_value' => $reply['CMD'] ?? $reply['Cmd'] ?? null,
-            'status' => ($return === null || $return >= 0)
-                ? ZktecoDeviceCommand::STATUS_DONE
-                : ZktecoDeviceCommand::STATUS_FAILED,
+            'status' => $status,
             'completed_at' => now(),
         ])->save();
+
+        // Mirror roster / biometrics only after the device confirms success.
+        if ($status === ZktecoDeviceCommand::STATUS_DONE) {
+            $this->applySuccessfulCommand($command, $device);
+        }
 
         event(new CommandCompleted($command));
 
         return $command;
+    }
+
+    /**
+     * Apply local DB side-effects once the device reports Return ≥ 0.
+     * Avoids optimistic roster rows that diverge when the device rejects a command.
+     */
+    protected function applySuccessfulCommand(ZktecoDeviceCommand $command, ?ZktecoDevice $device = null): void
+    {
+        $device ??= $command->device;
+
+        if (! $device && $command->device_id) {
+            $device = ZktecoDevice::query()->find($command->device_id);
+        }
+
+        if (! $device && $command->serial) {
+            $device = ZktecoDevice::query()->where('serial', $command->serial)->first();
+        }
+
+        if (! $device) {
+            return;
+        }
+
+        $body = (string) $command->command;
+
+        if (str_starts_with($body, 'DATA UPDATE USERINFO ')) {
+            $fields = $this->parseCommandFields(substr($body, strlen('DATA UPDATE USERINFO ')));
+            if (($fields['PIN'] ?? '') === '') {
+                return;
+            }
+            app(AdmsService::class)->upsertDeviceUser($device, $fields);
+            $device->forceFill([
+                'user_count' => ZktecoDeviceUser::where('serial', $device->serial)->count(),
+            ])->saveQuietly();
+
+            return;
+        }
+
+        if (str_starts_with($body, 'DATA DELETE USERINFO ')) {
+            $fields = $this->parseCommandFields(substr($body, strlen('DATA DELETE USERINFO ')));
+            $pin = (string) ($fields['PIN'] ?? '');
+            if ($pin === '') {
+                return;
+            }
+            ZktecoDeviceUser::where('serial', $device->serial)->where('pin', $pin)->delete();
+            $device->forceFill([
+                'user_count' => ZktecoDeviceUser::where('serial', $device->serial)->count(),
+            ])->saveQuietly();
+
+            return;
+        }
+
+        if (str_starts_with($body, 'DATA UPDATE FINGERTMP ')) {
+            $fields = $this->parseCommandFields(substr($body, strlen('DATA UPDATE FINGERTMP ')));
+            app(AdmsService::class)->markTemplate($device, 'FINGERTMP', $fields);
+
+            return;
+        }
+
+        if (str_starts_with($body, 'DATA DELETE FINGERTMP ')) {
+            $fields = $this->parseCommandFields(substr($body, strlen('DATA DELETE FINGERTMP ')));
+            $this->decrementTemplateFlag($device, (string) ($fields['PIN'] ?? ''), 'fp');
+
+            return;
+        }
+
+        if (str_starts_with($body, 'DATA UPDATE FACE ')) {
+            $fields = $this->parseCommandFields(substr($body, strlen('DATA UPDATE FACE ')));
+            app(AdmsService::class)->markTemplate($device, 'FACE', $fields);
+
+            return;
+        }
+
+        if (str_starts_with($body, 'DATA DELETE FACE ')) {
+            $fields = $this->parseCommandFields(substr($body, strlen('DATA DELETE FACE ')));
+            $this->decrementTemplateFlag($device, (string) ($fields['PIN'] ?? ''), 'face');
+        }
+    }
+
+    /**
+     * @return array<string,string>
+     */
+    protected function parseCommandFields(string $body): array
+    {
+        $fields = [];
+
+        foreach (preg_split('/\t+/', trim($body)) ?: [] as $part) {
+            $part = trim($part);
+            if ($part === '' || ! str_contains($part, '=')) {
+                continue;
+            }
+            [$key, $value] = explode('=', $part, 2);
+            $fields[trim($key)] = $value;
+        }
+
+        return $fields;
+    }
+
+    protected function decrementTemplateFlag(ZktecoDevice $device, string $pin, string $kind): void
+    {
+        if ($pin === '') {
+            return;
+        }
+
+        $user = ZktecoDeviceUser::query()
+            ->where('serial', $device->serial)
+            ->where('pin', $pin)
+            ->first();
+
+        if (! $user) {
+            return;
+        }
+
+        if ($kind === 'fp') {
+            $user->fp_count = max(0, (int) $user->fp_count - 1);
+            $user->has_fp = $user->fp_count > 0;
+        } else {
+            $user->face_count = max(0, (int) $user->face_count - 1);
+            $user->has_face = $user->face_count > 0;
+        }
+
+        $user->synced_at = now();
+        $user->save();
     }
 
     public function requeueStale(): int
@@ -269,28 +398,14 @@ class CommandService
     */
 
     /**
+     * Queue USERINFO to the device. Local `zkteco_device_users` is updated only
+     * after a successful `devicecmd` reply (see applySuccessfulCommand).
+     *
      * @param  array{pin:string|int, name?:string, privilege?:int, password?:string, card?:string, group?:string|int, timezone?:string}  $user
      */
     public function addUser(ZktecoDevice $device, array $user): ZktecoDeviceCommand
     {
-        $cmd = $this->enqueue($device, $this->buildUpdateUser($user), 'USERINFO');
-
-        // Mirror locally so UI is immediate; device confirms on next poll.
-        ZktecoDeviceUser::updateOrCreate(
-            ['serial' => $device->serial, 'pin' => (string) ($user['pin'] ?? '')],
-            [
-                'device_id' => $device->id,
-                'name' => $user['name'] ?? null,
-                'privilege' => (int) ($user['privilege'] ?? 0),
-                'password' => $user['password'] ?? null,
-                'card' => $user['card'] ?? null,
-                'group' => isset($user['group']) ? (string) $user['group'] : '1',
-                'timezone' => $user['timezone'] ?? '0000000000000000',
-                'synced_at' => now(),
-            ]
-        );
-
-        return $cmd;
+        return $this->enqueue($device, $this->buildUpdateUser($user), 'USERINFO');
     }
 
     /**
@@ -311,10 +426,7 @@ class CommandService
 
     public function deleteUser(ZktecoDevice $device, string|int $pin): ZktecoDeviceCommand
     {
-        $cmd = $this->enqueue($device, $this->buildDeleteUser($pin), 'DELETE_USER');
-        ZktecoDeviceUser::where('serial', $device->serial)->where('pin', (string) $pin)->delete();
-
-        return $cmd;
+        return $this->enqueue($device, $this->buildDeleteUser($pin), 'DELETE_USER');
     }
 
     public function queryUsers(ZktecoDevice $device, string|int $pin = ''): ZktecoDeviceCommand
@@ -327,19 +439,7 @@ class CommandService
      */
     public function addFingerprint(ZktecoDevice $device, array $fp): ZktecoDeviceCommand
     {
-        $cmd = $this->enqueue($device, $this->buildUpdateFingerprint($fp), 'FINGERTMP');
-
-        $user = ZktecoDeviceUser::firstOrNew([
-            'serial' => $device->serial,
-            'pin' => (string) ($fp['pin'] ?? ''),
-        ]);
-        $user->device_id = $device->id;
-        $user->has_fp = true;
-        $user->fp_count = (int) $user->fp_count + 1;
-        $user->synced_at = now();
-        $user->save();
-
-        return $cmd;
+        return $this->enqueue($device, $this->buildUpdateFingerprint($fp), 'FINGERTMP');
     }
 
     public function deleteFingerprint(ZktecoDevice $device, string|int $pin, int $fid = 0): ZktecoDeviceCommand
@@ -352,19 +452,7 @@ class CommandService
      */
     public function addFace(ZktecoDevice $device, array $face): ZktecoDeviceCommand
     {
-        $cmd = $this->enqueue($device, $this->buildUpdateFace($face), 'FACE');
-
-        $user = ZktecoDeviceUser::firstOrNew([
-            'serial' => $device->serial,
-            'pin' => (string) ($face['pin'] ?? ''),
-        ]);
-        $user->device_id = $device->id;
-        $user->has_face = true;
-        $user->face_count = (int) $user->face_count + 1;
-        $user->synced_at = now();
-        $user->save();
-
-        return $cmd;
+        return $this->enqueue($device, $this->buildUpdateFace($face), 'FACE');
     }
 
     public function deleteFace(ZktecoDevice $device, string|int $pin, int $fid = 0): ZktecoDeviceCommand

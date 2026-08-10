@@ -61,8 +61,17 @@ class AdmsController extends Controller
 
     private function storeAttphoto(AdmsDataRequest $request, ZktecoDevice $device): Response
     {
-        // Photos are binary / large — acknowledge + advance stamp; apps can hook fdata if needed.
-        $this->adms->updateStamp($device, 'ATTPHOTO', $request->stamp());
+        $body = $request->getContent();
+        $stamp = $request->stamp();
+        $result = $this->adms->storeAttphoto($device, $body, $stamp);
+
+        // Advance stamp only when the photo was persisted (or feature disabled → still ack
+        // so the device does not retry forever when intentionally off).
+        $advance = $result['saved'] || ($result['reason'] === 'disabled');
+        if ($advance) {
+            $this->adms->updateStamp($device, 'ATTPHOTO', $stamp);
+        }
+
         $response = $this->adms->ok();
 
         $this->adms->logRequest([
@@ -72,8 +81,16 @@ class AdmsController extends Controller
             'method' => 'POST',
             'table_name' => 'ATTPHOTO',
             'query' => $request->getQueryString(),
-            'message' => 'attphoto accepted (' . strlen($request->getContent()) . ' bytes)',
+            'message' => sprintf(
+                'attphoto saved=%s bytes=%d reason=%s stamp=%s',
+                $result['saved'] ? 'yes' : 'no',
+                $result['bytes'],
+                $result['reason'] ?? 'ok',
+                $advance ? 'advanced' : 'held'
+            ),
             'response' => $response,
+            'records_count' => $result['saved'] ? 1 : 0,
+            'level' => $result['saved'] || $result['reason'] === 'disabled' ? 'info' : 'warning',
             'ip' => $request->ip(),
         ]);
 

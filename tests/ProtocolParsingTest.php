@@ -18,6 +18,8 @@ class ProtocolParsingTest extends TestCase
         $this->assertSame('2026-08-10 09:15:00', $records[0]['timestamp']);
         $this->assertSame(0, $records[0]['status']);
         $this->assertSame(1, $records[0]['verify']);
+        $this->assertSame('0', $records[0]['workcode']);
+        $this->assertNull($records[1]['workcode']);
     }
 
     public function test_parse_attlog_whitespace_fallback(): void
@@ -30,7 +32,24 @@ class ProtocolParsingTest extends TestCase
         $this->assertSame('2026-08-10 18:00:01', $records[0]['timestamp']);
     }
 
-    public function test_build_update_user_command(): void
+    public function test_parse_attphoto_null_separated(): void
+    {
+        $svc = new AdmsService();
+        $jpeg = "\xFF\xD8\xFF\xD9"; // minimal JPEG-like bytes
+        $body = "PIN=20260810121500-1001\tSN=ABC123\tsize=" . strlen($jpeg) . "\tCMD=uploadphoto\0" . $jpeg;
+
+        $parsed = $svc->parseAttphoto($body);
+
+        $this->assertNotNull($parsed);
+        $this->assertSame('1001', $parsed['pin']);
+        $this->assertSame('20260810121500-1001', $parsed['pin_raw']);
+        $this->assertSame('uploadphoto', $parsed['cmd']);
+        $this->assertSame($jpeg, $parsed['binary']);
+        $this->assertSame(strlen($jpeg), $parsed['size']);
+        $this->assertSame('2026-08-10 12:15:00', $parsed['captured_at']->format('Y-m-d H:i:s'));
+    }
+
+    public function test_parse_command_fields_via_update_user_builder(): void
     {
         $svc = new CommandService();
         $cmd = $svc->buildUpdateUser([

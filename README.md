@@ -109,9 +109,10 @@ Created automatically on `php artisan migrate`:
 | Table | Purpose |
 |-------|---------|
 | `zkteco_devices` | Registered devices (by serial `SN`) |
-| `zkteco_transactions` | Attendance punches |
+| `zkteco_transactions` | Attendance punches (includes `workcode`) |
 | `zkteco_device_commands` | Commands waiting for the device |
-| `zkteco_device_users` | USERINFO roster from device |
+| `zkteco_device_users` | USERINFO roster (updated after device confirms commands, or via OPERLOG) |
+| `zkteco_attphotos` | Attendance photos saved from `ATTPHOTO` uploads |
 | `zkteco_heartbeat_logs` | `getrequest` polls (liveness) |
 | `zkteco_adms_logs` | Raw protocol audit trail |
 
@@ -126,6 +127,7 @@ Created automatically on `php artisan migrate`:
 | `timestamp` | Punch time |
 | `status` | Punch state (in/out/…) |
 | `verify` | Verify type (fingerprint/face/…) |
+| `workcode` | Optional work code from ATTLOG |
 | `source` | Always `adms` for this package |
 | `terminal_sn` | Device serial |
 
@@ -224,7 +226,8 @@ Think of this package as the **ingestion + device control layer**. Your Laravel 
 ```php
 use TanemRahman\ZktecoAdms\Facades\ZktecoAdms;
 
-Event::listen(TransactionsReceived::class, function (TransactionsReceived $e) {
+// Queue user to device — local roster updates only after successful devicecmd reply
+ZktecoAdms::addUser('DEVICE-SN', [
     'pin' => 1001,
     'name' => 'Karim',
     'privilege' => 0,      // 0=user, 14=admin
@@ -262,7 +265,8 @@ ZktecoAdms::queryAttlog('DEVICE-SN', '2026-08-01 00:00:00', '2026-08-10 23:59:59
 ZktecoAdms::resetStamps('DEVICE-SN');    // force re-upload on next handshake
 ```
 
-Device picks commands on the next `getrequest` poll (~every 10 seconds).
+Device picks commands on the next `getrequest` poll (~every 10 seconds).  
+`zkteco_device_users` is updated only after the device returns `Return≥0` on `/iclock/devicecmd` (or when the device pushes USERINFO via OPERLOG).
 
 ### Suggested screens (you build these)
 
@@ -270,8 +274,9 @@ Device picks commands on the next `getrequest` poll (~every 10 seconds).
 2. **Live punches** — paginate `ZktecoTransaction` where `source = adms`
 3. **Device users** — show `ZktecoDeviceUser` roster + “Add user” form that calls `ZktecoAdms::addUser`
 4. **Biometrics** — enroll face/finger on device, or push templates via `addFace` / `addFingerprint`
-5. **Protocol logs** — debug with `ZktecoAdmsLog` (dev only)
-6. **Commands** — show pending queue from `ZktecoDeviceCommand`
+5. **Attendance photos** — browse `ZktecoAttphoto` (files under `storage/app/zkteco/attphotos` by default)
+6. **Protocol logs** — debug with `ZktecoAdmsLog` (dev only)
+7. **Commands** — show pending queue from `ZktecoDeviceCommand`
 
 ### Example: Devices index (controller sketch)
 
@@ -335,12 +340,17 @@ $employee = Employee::where('biometric_emp_id', $txn->user_id)->first();
 
 ```php
 use TanemRahman\ZktecoAdms\Events\TransactionsReceived;
+use TanemRahman\ZktecoAdms\Events\AttendancePhotoReceived;
 use TanemRahman\ZktecoAdms\Events\DeviceRegistered;
 use TanemRahman\ZktecoAdms\Events\CommandCompleted;
 use TanemRahman\ZktecoAdms\Events\UsersSynced;
 
 Event::listen(TransactionsReceived::class, function (TransactionsReceived $e) {
-    // $e->device, $e->saved, $e->pins, $e->summary, $e->records
+    // $e->device, $e->saved, $e->pins, $e->summary, $e->records (includes workcode)
+});
+
+Event::listen(AttendancePhotoReceived::class, function (AttendancePhotoReceived $e) {
+    // $e->device, $e->photo  (disk path in $e->photo->path)
 });
 
 Event::listen(DeviceRegistered::class, fn ($e) => /* new SN */);
@@ -391,14 +401,16 @@ Scheduled automatically:
 |---------|--------|
 | `/iclock` handshake + options | ✅ |
 | ATTLOG punch ingest + dedupe | ✅ |
+| ATTLOG `workcode` column | ✅ |
 | OPERLOG / USERINFO sync → DB | ✅ |
+| ATTPHOTO save to disk + `zkteco_attphotos` | ✅ |
 | FP / Face template flags from device | ✅ |
 | fdata / registry / push / ping | ✅ |
 | Auto-register device by SN | ✅ |
 | Comm key auth | ✅ |
 | Protocol + heartbeat logs | ✅ |
 | Command queue (getrequest / devicecmd) | ✅ |
-| Add / update / delete user | ✅ |
+| Add / update / delete user (DB after device ack) | ✅ |
 | Push fingerprint template | ✅ |
 | Push face template | ✅ |
 | Query users / attlog from device | ✅ |

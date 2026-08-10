@@ -72,6 +72,12 @@ return [
         'max_per_poll' => (int) env('ZKTECO_ADMS_CMD_MAX_PER_POLL', 10),
     ],
 
+    'attphoto' => [
+        'enabled' => (bool) env('ZKTECO_ADMS_ATTPHOTO', true),
+        'disk' => env('ZKTECO_ADMS_ATTPHOTO_DISK', 'local'),
+        'path' => env('ZKTECO_ADMS_ATTPHOTO_PATH', 'zkteco/attphotos'),
+    ],
+
     'schedule' => [
         'enabled' => (bool) env('ZKTECO_ADMS_SCHEDULE', true),
     ],

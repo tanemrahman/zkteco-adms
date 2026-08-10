@@ -41,6 +41,11 @@ class ZktecoDevice extends Model
         return $this->hasMany(ZktecoDeviceUser::class, 'device_id');
     }
 
+    public function attphotos(): HasMany
+    {
+        return $this->hasMany(ZktecoAttphoto::class, 'device_id');
+    }
+
     public function heartbeats(): HasMany
     {
         return $this->hasMany(ZktecoHeartbeatLog::class, 'device_id');

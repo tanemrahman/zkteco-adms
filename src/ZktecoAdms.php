@@ -11,6 +11,7 @@ use TanemRahman\ZktecoAdms\Services\ZktecoAdmsManager;
  * @method static \TanemRahman\ZktecoAdms\Services\UserSyncService users()
  * @method static \TanemRahman\ZktecoAdms\Services\AdmsService adms()
  * @method static \TanemRahman\ZktecoAdms\Models\ZktecoDeviceCommand addUser(\TanemRahman\ZktecoAdms\Models\ZktecoDevice|string $device, array $user)
+ * @method static array addUsers(\TanemRahman\ZktecoAdms\Models\ZktecoDevice|string $device, array $users)
  * @method static \TanemRahman\ZktecoAdms\Models\ZktecoDeviceCommand deleteUser(\TanemRahman\ZktecoAdms\Models\ZktecoDevice|string $device, string|int $pin)
  * @method static \TanemRahman\ZktecoAdms\Models\ZktecoDeviceCommand addFingerprint(\TanemRahman\ZktecoAdms\Models\ZktecoDevice|string $device, array $fp)
  * @method static \TanemRahman\ZktecoAdms\Models\ZktecoDeviceCommand addFace(\TanemRahman\ZktecoAdms\Models\ZktecoDevice|string $device, array $face)

@@ -3,6 +3,7 @@
 namespace TanemRahman\ZktecoAdms\Services;
 
 use Illuminate\Http\Request;
+use TanemRahman\ZktecoAdms\Events\UsersSynced;
 use TanemRahman\ZktecoAdms\Models\ZktecoDevice;
 use TanemRahman\ZktecoAdms\Models\ZktecoDeviceUser;
 
@@ -65,6 +66,10 @@ class UserSyncService
         if ($emptyBody || $count > 0) {
             $this->adms->updateStamp($device, 'OPERLOG', $request->query('Stamp'));
             $stampAdvanced = true;
+        }
+
+        if ($users > 0 || $templates > 0) {
+            event(new UsersSynced($device, $users, $templates, strtoupper($table)));
         }
 
         return [

@@ -2,6 +2,7 @@
 
 namespace TanemRahman\ZktecoAdms\Models;
 
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
@@ -48,6 +49,33 @@ class ZktecoDevice extends Model
     public function protocolLogs(): HasMany
     {
         return $this->hasMany(ZktecoAdmsLog::class, 'device_id');
+    }
+
+    public function scopeAdms(Builder $query): Builder
+    {
+        return $query->where('protocol', 'adms');
+    }
+
+    public function scopeActive(Builder $query): Builder
+    {
+        return $query->where('status', true);
+    }
+
+    public function scopeOnline(Builder $query): Builder
+    {
+        $minutes = (int) config('zkteco-adms.online_threshold_minutes', 3);
+
+        return $query->where('last_seen_at', '>=', now()->subMinutes($minutes));
+    }
+
+    public function scopeOffline(Builder $query): Builder
+    {
+        $minutes = (int) config('zkteco-adms.online_threshold_minutes', 3);
+
+        return $query->where(function (Builder $q) use ($minutes) {
+            $q->whereNull('last_seen_at')
+                ->orWhere('last_seen_at', '<', now()->subMinutes($minutes));
+        });
     }
 
     public function isOnline(): bool

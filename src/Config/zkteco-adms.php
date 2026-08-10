@@ -49,7 +49,13 @@ return [
         'retention_days' => (int) env('ZKTECO_ADMS_RETENTION_DAYS', 30),
         'future_skew_minutes' => (int) env('ZKTECO_ADMS_FUTURE_SKEW', 360),
         'device_timezone' => env('ZKTECO_ADMS_DEVICE_TIMEZONE', 'Asia/Dhaka'),
+        // When true, TransactionsReceived is dispatched via queue after punches save.
+        'queue_processing' => (bool) env('ZKTECO_ADMS_QUEUE_PROCESSING', false),
+        'queue' => env('ZKTECO_ADMS_QUEUE', 'default'),
     ],
+
+    // Reject requests from devices with status=false (soft-disabled).
+    'reject_inactive' => (bool) env('ZKTECO_ADMS_REJECT_INACTIVE', false),
 
     'logging' => [
         'enabled' => (bool) env('ZKTECO_ADMS_LOG_ENABLED', true),

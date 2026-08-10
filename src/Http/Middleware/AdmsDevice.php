@@ -62,6 +62,21 @@ class AdmsDevice
             return $this->text('Error: invalid comm key', 401);
         }
 
+        if (config('zkteco-adms.reject_inactive', false) && !$device->status) {
+            $this->adms->logRequest([
+                'device_id' => $device->id,
+                'serial' => $device->serial,
+                'endpoint' => $this->endpoint($request),
+                'method' => $request->method(),
+                'level' => 'warning',
+                'status_code' => 200,
+                'message' => 'Inactive device rejected',
+                'ip' => $request->ip(),
+            ]);
+
+            return $this->text($this->adms->ok(), 200);
+        }
+
         $this->adms->touch($device);
         $request->attributes->set('adms_device', $device);
 

@@ -3,7 +3,7 @@
 namespace TanemRahman\ZktecoAdms\Services;
 
 use DateTimeInterface;
-use InvalidArgumentException;
+use TanemRahman\ZktecoAdms\Exceptions\DeviceNotFoundException;
 use TanemRahman\ZktecoAdms\Models\ZktecoDevice;
 use TanemRahman\ZktecoAdms\Models\ZktecoDeviceCommand;
 
@@ -48,6 +48,15 @@ class ZktecoAdmsManager
     public function addUser(ZktecoDevice|string $device, array $user): ZktecoDeviceCommand
     {
         return $this->commands->addUser($this->resolve($device), $user);
+    }
+
+    /**
+     * @param  array<int,array{pin:string|int, name?:string, privilege?:int, password?:string, card?:string, group?:string|int, timezone?:string}>  $users
+     * @return array<int,ZktecoDeviceCommand>
+     */
+    public function addUsers(ZktecoDevice|string $device, array $users): array
+    {
+        return $this->commands->addUsers($this->resolve($device), $users);
     }
 
     public function deleteUser(ZktecoDevice|string $device, string|int $pin): ZktecoDeviceCommand
@@ -128,7 +137,7 @@ class ZktecoAdmsManager
 
         $found = $this->device($device);
         if (!$found) {
-            throw new InvalidArgumentException("ADMS device not found for serial [{$device}].");
+            throw DeviceNotFoundException::forSerial($device);
         }
 
         return $found;

@@ -4,6 +4,7 @@ namespace TanemRahman\ZktecoAdms\Services;
 
 use DateTimeInterface;
 use Illuminate\Support\Collection;
+use TanemRahman\ZktecoAdms\Events\CommandCompleted;
 use TanemRahman\ZktecoAdms\Models\ZktecoAdmsLog;
 use TanemRahman\ZktecoAdms\Models\ZktecoDevice;
 use TanemRahman\ZktecoAdms\Models\ZktecoDeviceCommand;
@@ -82,6 +83,8 @@ class CommandService
                 : ZktecoDeviceCommand::STATUS_FAILED,
             'completed_at' => now(),
         ])->save();
+
+        event(new CommandCompleted($command));
 
         return $command;
     }
@@ -280,6 +283,22 @@ class CommandService
         );
 
         return $cmd;
+    }
+
+    /**
+     * Queue many USERINFO updates (one command per user).
+     *
+     * @param  array<int,array{pin:string|int, name?:string, privilege?:int, password?:string, card?:string, group?:string|int, timezone?:string}>  $users
+     * @return array<int,ZktecoDeviceCommand>
+     */
+    public function addUsers(ZktecoDevice $device, array $users): array
+    {
+        $commands = [];
+        foreach ($users as $user) {
+            $commands[] = $this->addUser($device, $user);
+        }
+
+        return $commands;
     }
 
     public function deleteUser(ZktecoDevice $device, string|int $pin): ZktecoDeviceCommand

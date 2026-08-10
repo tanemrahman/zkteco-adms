@@ -1,0 +1,21 @@
+### Handshake
+GET http://127.0.0.1:8000/iclock/cdata?SN=DEMO-01&options=all&pushver=2.4.1
+
+### Attendance upload (ATTLOG)
+POST http://127.0.0.1:8000/iclock/cdata?SN=DEMO-01&table=ATTLOG&Stamp=999
+Content-Type: text/plain
+
+1001	2026-08-10 10:00:00	0	1
+1002	2026-08-10 10:01:00	1	15
+
+### Heartbeat / command poll
+GET http://127.0.0.1:8000/iclock/getrequest?SN=DEMO-01
+
+### Command result
+POST http://127.0.0.1:8000/iclock/devicecmd?SN=DEMO-01
+Content-Type: text/plain
+
+ID=1&Return=0&CMD=INFO
+
+### Ping
+GET http://127.0.0.1:8000/iclock/ping?SN=DEMO-01

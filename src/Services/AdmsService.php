@@ -6,7 +6,9 @@ use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use TanemRahman\ZktecoAdms\Events\DeviceRegistered;
 use TanemRahman\ZktecoAdms\Events\TransactionsReceived;
+use TanemRahman\ZktecoAdms\Jobs\ProcessTransactionsReceived;
 use TanemRahman\ZktecoAdms\Models\ZktecoAdmsLog;
 use TanemRahman\ZktecoAdms\Models\ZktecoDevice;
 use TanemRahman\ZktecoAdms\Models\ZktecoDeviceUser;
@@ -41,6 +43,7 @@ class AdmsService
         ]);
 
         Log::info('[ZKTeco ADMS] Registered device', ['serial' => $serial, 'id' => $device->id]);
+        event(new DeviceRegistered($device));
 
         return $device;
     }
@@ -145,6 +148,7 @@ class AdmsService
         $duplicates = 0;
         $rejected = 0;
         $pins = [];
+        $acceptedRecords = [];
 
         $retentionDays = (int) config('zkteco-adms.attendance.retention_days', 30);
         $futureSkew = (int) config('zkteco-adms.attendance.future_skew_minutes', 360);
@@ -194,6 +198,13 @@ class AdmsService
                 'created_at' => now(),
                 'updated_at' => now(),
             ];
+
+            $acceptedRecords[] = [
+                'pin' => $pin,
+                'timestamp' => $normalized,
+                'status' => $r['status'],
+                'verify' => $r['verify'],
+            ];
         }
 
         foreach (array_chunk($rows, 100) as $chunk) {
@@ -222,12 +233,50 @@ class AdmsService
             }
         }
 
+        $summary = compact('saved', 'duplicates', 'rejected');
+
         if ($saved > 0) {
             $device->increment('transaction_count', $saved);
-            event(new TransactionsReceived($device, $saved, array_values($pins), $source));
+            $this->dispatchTransactionsEvent(
+                $device,
+                $saved,
+                array_values($pins),
+                $source,
+                $summary,
+                $acceptedRecords,
+            );
         }
 
-        return compact('saved', 'duplicates', 'rejected') + ['pins' => array_values($pins)];
+        return $summary + ['pins' => array_values($pins)];
+    }
+
+    /**
+     * @param  array<int,int>  $pins
+     * @param  array{saved:int,duplicates:int,rejected:int}  $summary
+     * @param  array<int,array{pin:int|string,timestamp:string,status:int,verify:int}>  $records
+     */
+    protected function dispatchTransactionsEvent(
+        ZktecoDevice $device,
+        int $saved,
+        array $pins,
+        string $source,
+        array $summary,
+        array $records,
+    ): void {
+        if (config('zkteco-adms.attendance.queue_processing', false)) {
+            ProcessTransactionsReceived::dispatch(
+                $device->id,
+                $saved,
+                $pins,
+                $summary,
+                $records,
+                $source,
+            );
+
+            return;
+        }
+
+        event(new TransactionsReceived($device, $saved, $pins, $source, $summary, $records));
     }
 
     public function parseOperlog(string $body): array

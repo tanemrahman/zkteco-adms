@@ -50,12 +50,34 @@ class AdmsController extends Controller
 
         return match ($table) {
             'ATTLOG' => $this->storeAttlog($request, $device),
+            'ATTPHOTO' => $this->storeAttphoto($request, $device),
             'OPERLOG', 'USERINFO', 'USER', 'FINGERTMP', 'FACE',
             'USERPIC', 'BIODATA', 'BIOPHOTO', 'WORKCODE'
                 => $this->syncOperlog($request, $device, $table),
             'OPTIONS' => $this->receiveOptions($request, $device),
             default => $this->acknowledgeUnknown($request, $device, $table),
         };
+    }
+
+    private function storeAttphoto(AdmsDataRequest $request, ZktecoDevice $device): Response
+    {
+        // Photos are binary / large — acknowledge + advance stamp; apps can hook fdata if needed.
+        $this->adms->updateStamp($device, 'ATTPHOTO', $request->stamp());
+        $response = $this->adms->ok();
+
+        $this->adms->logRequest([
+            'device_id' => $device->id,
+            'serial' => $device->serial,
+            'endpoint' => 'cdata',
+            'method' => 'POST',
+            'table_name' => 'ATTPHOTO',
+            'query' => $request->getQueryString(),
+            'message' => 'attphoto accepted (' . strlen($request->getContent()) . ' bytes)',
+            'response' => $response,
+            'ip' => $request->ip(),
+        ]);
+
+        return $this->text($response);
     }
 
     private function storeAttlog(AdmsDataRequest $request, ZktecoDevice $device): Response

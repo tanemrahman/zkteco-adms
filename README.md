@@ -336,14 +336,20 @@ $employee = Employee::where('biometric_emp_id', $txn->user_id)->first();
 
 ```php
 use TanemRahman\ZktecoAdms\Events\TransactionsReceived;
+use TanemRahman\ZktecoAdms\Events\DeviceRegistered;
+use TanemRahman\ZktecoAdms\Events\CommandCompleted;
+use TanemRahman\ZktecoAdms\Events\UsersSynced;
 
 Event::listen(TransactionsReceived::class, function (TransactionsReceived $e) {
-    // $e->device  — ZktecoDevice
-    // $e->saved   — how many new rows
-    // $e->pins    — list of device PINs in this batch
-    // $e->source  — "adms"
+    // $e->device, $e->saved, $e->pins, $e->summary, $e->records
 });
+
+Event::listen(DeviceRegistered::class, fn ($e) => /* new SN */);
+Event::listen(CommandCompleted::class, fn ($e) => /* $e->command */);
+Event::listen(UsersSynced::class, fn ($e) => /* roster updated */);
 ```
+
+Set `ZKTECO_ADMS_QUEUE_PROCESSING=true` to fire `TransactionsReceived` on a queue worker instead of inline.
 
 ---
 

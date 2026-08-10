@@ -222,10 +222,9 @@ Think of this package as the **ingestion + device control layer**. Your Laravel 
 ### Facade API (recommended)
 
 ```php
-use TanemRahman\ZktecoAdms\ZktecoAdms;
+use TanemRahman\ZktecoAdms\Facades\ZktecoAdms;
 
-// Add / update user on device (PIN + name + card…)
-ZktecoAdms::addUser('DEVICE-SN', [
+Event::listen(TransactionsReceived::class, function (TransactionsReceived $e) {
     'pin' => 1001,
     'name' => 'Karim',
     'privilege' => 0,      // 0=user, 14=admin
@@ -292,7 +291,7 @@ public function index()
 ### Example: Add user from your admin form
 
 ```php
-use TanemRahman\ZktecoAdms\ZktecoAdms;
+use TanemRahman\ZktecoAdms\Facades\ZktecoAdms;
 
 public function storeUser(Request $request, string $serial)
 {

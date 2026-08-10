@@ -1,6 +1,6 @@
 {
     "name": "tanemrahman/zkteco-adms",
-    "version": "1.1.1",
+    "version": "1.2.0",
     "description": "Production-ready ZKTeco ADMS / iClock Push protocol server for Laravel.",
     "type": "library",
     "license": "MIT",
@@ -38,15 +38,19 @@
     "extra": {
         "laravel": {
             "providers": [
-                "TanemRahman\\ZktecoAdms\\Providers\\ZktecoAdmsServiceProvider"
+                "TanemRahman\\ZktecoAdms\\ZktecoAdmsServiceProvider"
             ],
             "aliases": {
-                "ZktecoAdms": "TanemRahman\\ZktecoAdms\\ZktecoAdms"
+                "ZktecoAdms": "TanemRahman\\ZktecoAdms\\Facades\\ZktecoAdms"
             }
         }
     },
     "scripts": {
         "test": "phpunit"
     },
-    "minimum-stability": "stable"
+    "config": {
+        "sort-packages": true
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
 }

@@ -1,6 +1,6 @@
 <?php
 
-namespace TanemRahman\ZktecoAdms\Providers;
+namespace TanemRahman\ZktecoAdms;
 
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Schedule;
@@ -19,7 +19,7 @@ class ZktecoAdmsServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
-        $this->mergeConfigFrom(__DIR__ . '/../Config/zkteco-adms.php', 'zkteco-adms');
+        $this->mergeConfigFrom(__DIR__ . '/../config/zkteco-adms.php', 'zkteco-adms');
 
         $this->app->singleton(AdmsService::class);
         $this->app->singleton(CommandService::class);
@@ -36,18 +36,20 @@ class ZktecoAdmsServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
-        $this->publishes([
-            __DIR__ . '/../Config/zkteco-adms.php' => config_path('zkteco-adms.php'),
-        ], 'zkteco-adms-config');
+        if ($this->app->runningInConsole()) {
+            $this->publishes([
+                __DIR__ . '/../config/zkteco-adms.php' => config_path('zkteco-adms.php'),
+            ], 'zkteco-adms-config');
 
-        $this->publishes([
-            __DIR__ . '/../Database/Migrations' => database_path('migrations'),
-        ], 'zkteco-adms-migrations');
+            $this->publishes([
+                __DIR__ . '/../database/migrations' => database_path('migrations'),
+            ], 'zkteco-adms-migrations');
+        }
 
-        $this->loadMigrationsFrom(__DIR__ . '/../Database/Migrations');
+        $this->loadMigrationsFrom(__DIR__ . '/../database/migrations');
+        $this->loadRoutesFrom(__DIR__ . '/../routes/adms.php');
 
         Route::aliasMiddleware('zkteco.adms.device', AdmsDevice::class);
-        $this->loadRoutesFrom(__DIR__ . '/../Routes/adms.php');
 
         $this->app->booted(function () {
             if (!config('zkteco-adms.schedule.enabled', true)) {

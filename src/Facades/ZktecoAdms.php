@@ -1,6 +1,6 @@
 <?php
 
-namespace TanemRahman\ZktecoAdms;
+namespace TanemRahman\ZktecoAdms\Facades;
 
 use Illuminate\Support\Facades\Facade;
 use TanemRahman\ZktecoAdms\Services\ZktecoAdmsManager;

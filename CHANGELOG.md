@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.2.0 — 2026-08-10
+
+### Changed
+- Package layout aligned with standard Laravel vendor packages:
+  - `config/` · `database/migrations/` · `routes/` · `src/` · `tests/` · `docs/`
+  - Service provider: `TanemRahman\ZktecoAdms\ZktecoAdmsServiceProvider`
+  - Facade: `TanemRahman\ZktecoAdms\Facades\ZktecoAdms`
+
 ## 1.1.1 — 2026-08-10
 
 ### Fixed

@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.1.1 — 2026-08-10
+
+### Fixed
+- Unknown/inactive devices no longer get protocol `OK` (prevents silent punch loss)
+- ATTLOG stamp only advances when `rejected === 0`
+- `devicecmd` reply key casing (`CMD`/`ID`/`Return`) normalized correctly
+- Command replies scoped to the requesting device serial
+- INFO reply no longer writes `Return=0` into firmware
+- Event payload limited to punches that actually exist after insert
+- Device timezone uses hour offset unless IANA zone explicitly set
+- `FINGERTMP` / `BIODATA` template flags
+- `require_comm_key` fails closed when key empty
+- INFO counters no longer overwrite app `transaction_count`
+- Unique index on `zkteco_devices.serial`
+- Scheduler can be disabled via `ZKTECO_ADMS_SCHEDULE`
+
 ## 1.1.0 — 2026-08-10
 
 ### Added

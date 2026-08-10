@@ -72,17 +72,10 @@ class CommandController extends Controller
             }
 
             parse_str($line, $reply);
-            $normalized = [];
-            foreach ($reply as $k => $v) {
-                $normalized[ucfirst(strtolower($k)) === 'Id' ? 'ID' : ucfirst(strtolower($k))] = $v;
-            }
+            $normalized = $this->normalizeReply($reply);
 
-            // INFO command replies often include firmware counters in CMD / body.
-            if (!empty($normalized['CMD']) && strtoupper((string) $normalized['CMD']) === 'INFO') {
-                $this->identity->syncInfo($device, (string) ($normalized['Return'] ?? $line));
-            }
-
-            if ($this->commands->recordReply($normalized)) {
+            // INFO identity comes from getrequest INFO=, not Return=0 on devicecmd.
+            if ($this->commands->recordReply($normalized, $device)) {
                 $handled++;
             }
         }
@@ -103,5 +96,25 @@ class CommandController extends Controller
         ]);
 
         return response($response, 200)->header('Content-Type', 'text/plain; charset=utf-8');
+    }
+
+    /**
+     * Canonicalise ZKTeco's odd key casing to ID / Return / CMD.
+     *
+     * @param  array<string,mixed>  $reply
+     * @return array{ID?:string,Return?:string,CMD?:string}
+     */
+    private function normalizeReply(array $reply): array
+    {
+        $normalized = [];
+
+        foreach ($reply as $k => $v) {
+            $upper = strtoupper((string) $k);
+            if (in_array($upper, ['ID', 'RETURN', 'CMD'], true)) {
+                $normalized[$upper === 'RETURN' ? 'Return' : $upper] = $v;
+            }
+        }
+
+        return $normalized;
     }
 }

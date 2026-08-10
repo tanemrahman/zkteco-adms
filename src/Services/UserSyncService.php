@@ -64,7 +64,9 @@ class UserSyncService
         $stampAdvanced = false;
 
         if ($emptyBody || $count > 0) {
-            $this->adms->updateStamp($device, 'OPERLOG', $request->query('Stamp'));
+            $this->adms->updateStamp($device, 'OPERLOG', $request instanceof \TanemRahman\ZktecoAdms\Http\Requests\AdmsDataRequest
+                ? $request->stamp()
+                : ($request->query('Stamp') ?? $request->query('stamp')));
             $stampAdvanced = true;
         }
 

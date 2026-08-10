@@ -50,6 +50,10 @@ class ZktecoAdmsServiceProvider extends ServiceProvider
         $this->loadRoutesFrom(__DIR__ . '/../Routes/adms.php');
 
         $this->app->booted(function () {
+            if (!config('zkteco-adms.schedule.enabled', true)) {
+                return;
+            }
+
             Schedule::command('zkteco-adms:commands --requeue-stale')->everyThirtyMinutes();
             Schedule::command('zkteco-adms:commands --prune')->dailyAt('02:00');
         });

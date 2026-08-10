@@ -84,7 +84,12 @@ class AdmsController extends Controller
     {
         $records = $this->adms->parseAttlog($request->getContent());
         $result = $this->adms->storeAttlog($device, $records);
-        $this->adms->updateStamp($device, 'ATTLOG', $request->stamp());
+
+        // Only advance stamp when no rows were hard-rejected (parse/retention/skew).
+        // Duplicates are fine — device may safely clear them.
+        if (($result['rejected'] ?? 0) === 0) {
+            $this->adms->updateStamp($device, 'ATTLOG', $request->stamp());
+        }
 
         $response = $this->adms->dataOk($result['saved']);
 
@@ -98,7 +103,14 @@ class AdmsController extends Controller
             'body' => $request->getContent(),
             'response' => $response,
             'records_count' => $result['saved'],
-            'message' => sprintf('attlog saved=%d dup=%d rej=%d', $result['saved'], $result['duplicates'], $result['rejected']),
+            'level' => ($result['rejected'] ?? 0) > 0 ? 'warning' : 'info',
+            'message' => sprintf(
+                'attlog saved=%d dup=%d rej=%d stamp=%s',
+                $result['saved'],
+                $result['duplicates'],
+                $result['rejected'],
+                ($result['rejected'] ?? 0) === 0 ? 'advanced' : 'held'
+            ),
             'ip' => $request->ip(),
         ]);
 

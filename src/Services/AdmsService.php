@@ -62,7 +62,12 @@ class AdmsService
         $provided = (string) $request->query('pushcommkey', $request->query('CommKey', ''));
         $expected = $device->comm_key ?: (string) config('zkteco-adms.comm_key', '');
 
-        return $expected === '' || hash_equals($expected, $provided);
+        if ($expected === '') {
+            // Fail closed when the feature is enabled but no key is configured.
+            return false;
+        }
+
+        return hash_equals($expected, $provided);
     }
 
     public function buildInitOptions(ZktecoDevice $device): string
@@ -148,13 +153,14 @@ class AdmsService
         $duplicates = 0;
         $rejected = 0;
         $pins = [];
-        $acceptedRecords = [];
 
         $retentionDays = (int) config('zkteco-adms.attendance.retention_days', 30);
         $futureSkew = (int) config('zkteco-adms.attendance.future_skew_minutes', 360);
         $source = (string) config('zkteco-adms.attendance.source', 'adms');
         $tzHours = (int) ($device->timezone ?? config('zkteco-adms.options.timezone', 6));
-        $deviceTz = config('zkteco-adms.attendance.device_timezone') ?: sprintf('%+03d:00', $tzHours);
+        // Prefer explicit IANA zone only when set; otherwise use device hour offset.
+        $configuredTz = config('zkteco-adms.attendance.device_timezone');
+        $deviceTz = filled($configuredTz) ? (string) $configuredTz : sprintf('%+03d:00', $tzHours);
 
         $floor = $retentionDays > 0 ? now()->subDays($retentionDays)->startOfDay() : null;
         $ceil = now()->addMinutes($futureSkew);
@@ -177,15 +183,19 @@ class AdmsService
             }
 
             $normalized = $ts->format('Y-m-d H:i:s');
-            $pin = (int) $r['pin'];
-            $key = $device->id . '_' . $pin . '_' . $normalized;
+            $rawPin = trim((string) $r['pin']);
+            if ($rawPin === '' || !ctype_digit($rawPin)) {
+                $rejected++;
+                continue;
+            }
+            $pin = (int) $rawPin;
+            $key = $device->id . '_' . $pin . '_' . $normalized . '_' . $r['status'];
 
             if (isset($seen[$key])) {
                 $duplicates++;
                 continue;
             }
             $seen[$key] = true;
-            $pins[$pin] = $pin;
 
             $rows[] = [
                 'device_id' => $device->id,
@@ -198,14 +208,9 @@ class AdmsService
                 'created_at' => now(),
                 'updated_at' => now(),
             ];
-
-            $acceptedRecords[] = [
-                'pin' => $pin,
-                'timestamp' => $normalized,
-                'status' => $r['status'],
-                'verify' => $r['verify'],
-            ];
         }
+
+        $insertedRecords = [];
 
         foreach (array_chunk($rows, 100) as $chunk) {
             $toInsert = [];
@@ -213,6 +218,7 @@ class AdmsService
                 $punchAt = Carbon::parse($row['timestamp']);
                 $exists = ZktecoTransaction::where('device_id', $row['device_id'])
                     ->where('user_id', $row['user_id'])
+                    ->where('status', $row['status'])
                     ->whereBetween('timestamp', [
                         $punchAt->copy()->subSeconds($tolerance)->format('Y-m-d H:i:s'),
                         $punchAt->copy()->addSeconds($tolerance)->format('Y-m-d H:i:s'),
@@ -226,11 +232,39 @@ class AdmsService
                 }
             }
 
-            if (!empty($toInsert)) {
-                $affected = DB::table('zkteco_transactions')->insertOrIgnore($toInsert);
-                $saved += $affected;
-                $duplicates += (count($toInsert) - $affected);
+            if (empty($toInsert)) {
+                continue;
             }
+
+            $affected = DB::table('zkteco_transactions')->insertOrIgnore($toInsert);
+            $saved += $affected;
+            $duplicates += (count($toInsert) - $affected);
+
+            foreach ($toInsert as $row) {
+                $existsNow = ZktecoTransaction::where('device_id', $row['device_id'])
+                    ->where('user_id', $row['user_id'])
+                    ->where('timestamp', $row['timestamp'])
+                    ->where('status', $row['status'])
+                    ->exists();
+
+                if (!$existsNow) {
+                    continue;
+                }
+
+                $pin = (int) $row['user_id'];
+                $pins[$pin] = $pin;
+                $insertedRecords[] = [
+                    'pin' => $pin,
+                    'timestamp' => $row['timestamp'],
+                    'status' => $row['status'],
+                    'verify' => $row['verify'],
+                ];
+            }
+        }
+
+        // Keep event payload length aligned with rows that exist after insert.
+        if (count($insertedRecords) > $saved) {
+            $insertedRecords = array_slice($insertedRecords, 0, $saved);
         }
 
         $summary = compact('saved', 'duplicates', 'rejected');
@@ -243,7 +277,7 @@ class AdmsService
                 array_values($pins),
                 $source,
                 $summary,
-                $acceptedRecords,
+                $insertedRecords,
             );
         }
 
@@ -336,12 +370,18 @@ class AdmsService
 
         $user->device_id = $device->id;
 
-        if (in_array($tag, ['FP', 'FINGERPRINT', 'BIODATA_FP'], true)) {
+        if (in_array($tag, ['FP', 'FINGERPRINT', 'FINGERTMP', 'BIODATA_FP'], true)) {
             $user->has_fp = true;
             $user->fp_count = (int) $user->fp_count + 1;
-        } elseif (in_array($tag, ['FACE', 'BIOPHOTO', 'BIODATA_FACE'], true)) {
-            $user->has_face = true;
-            $user->face_count = (int) $user->face_count + 1;
+        } elseif (in_array($tag, ['FACE', 'BIOPHOTO', 'BIODATA_FACE', 'BIODATA'], true)) {
+            // Bare BIODATA is usually face on modern Push firmware; FP uses FINGERTMP/FP.
+            if ($tag === 'BIODATA' && isset($fields['Type']) && stripos((string) $fields['Type'], 'fp') !== false) {
+                $user->has_fp = true;
+                $user->fp_count = (int) $user->fp_count + 1;
+            } else {
+                $user->has_face = true;
+                $user->face_count = (int) $user->face_count + 1;
+            }
         }
 
         $user->synced_at = now();

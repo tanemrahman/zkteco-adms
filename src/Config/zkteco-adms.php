@@ -48,7 +48,9 @@ return [
         'dedup_tolerance_seconds' => (int) env('ZKTECO_ADMS_DEDUP_TOLERANCE', 5),
         'retention_days' => (int) env('ZKTECO_ADMS_RETENTION_DAYS', 30),
         'future_skew_minutes' => (int) env('ZKTECO_ADMS_FUTURE_SKEW', 360),
-        'device_timezone' => env('ZKTECO_ADMS_DEVICE_TIMEZONE', 'Asia/Dhaka'),
+        // null = use each device's timezone hour offset (TimeZone=N from handshake).
+        // Set e.g. Asia/Dhaka only when you want a fixed IANA zone for all devices.
+        'device_timezone' => env('ZKTECO_ADMS_DEVICE_TIMEZONE'),
         // When true, TransactionsReceived is dispatched via queue after punches save.
         'queue_processing' => (bool) env('ZKTECO_ADMS_QUEUE_PROCESSING', false),
         'queue' => env('ZKTECO_ADMS_QUEUE', 'default'),
@@ -68,5 +70,9 @@ return [
     'commands' => [
         'stale_after_minutes' => (int) env('ZKTECO_ADMS_CMD_STALE_MINUTES', 30),
         'max_per_poll' => (int) env('ZKTECO_ADMS_CMD_MAX_PER_POLL', 10),
+    ],
+
+    'schedule' => [
+        'enabled' => (bool) env('ZKTECO_ADMS_SCHEDULE', true),
     ],
 ];

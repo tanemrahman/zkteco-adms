@@ -33,18 +33,19 @@ class AdmsDevice
 
         $device = $this->adms->resolveDevice((string) $serial, $request);
 
+        // Never return plain "OK" here — devices treat OK as accepted and drop buffered data.
         if ($device === null) {
             $this->adms->logRequest([
                 'serial' => (string) $serial,
                 'endpoint' => $this->endpoint($request),
                 'method' => $request->method(),
                 'level' => 'warning',
-                'status_code' => 200,
+                'status_code' => 403,
                 'message' => 'Unknown device ignored (auto-register off)',
                 'ip' => $request->ip(),
             ]);
 
-            return $this->text($this->adms->ok(), 200);
+            return $this->text('Error: unknown device', 403);
         }
 
         if (!$this->adms->commKeyValid($device, $request)) {
@@ -69,12 +70,12 @@ class AdmsDevice
                 'endpoint' => $this->endpoint($request),
                 'method' => $request->method(),
                 'level' => 'warning',
-                'status_code' => 200,
+                'status_code' => 403,
                 'message' => 'Inactive device rejected',
                 'ip' => $request->ip(),
             ]);
 
-            return $this->text($this->adms->ok(), 200);
+            return $this->text('Error: inactive device', 403);
         }
 
         $this->adms->touch($device);

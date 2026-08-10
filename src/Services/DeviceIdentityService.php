@@ -106,9 +106,7 @@ class DeviceIdentityService
         if (isset($parts[2]) && is_numeric($parts[2])) {
             $updates['fp_count'] = (int) $parts[2];
         }
-        if (isset($parts[3]) && is_numeric($parts[3])) {
-            $updates['transaction_count'] = (int) $parts[3];
-        }
+        // parts[3] is device-side AttLogCount — do not overwrite app transaction_count
         if (isset($parts[4]) && filter_var($parts[4], FILTER_VALIDATE_IP)) {
             $updates['ip'] = $parts[4];
         }
@@ -126,8 +124,8 @@ class DeviceIdentityService
             'UserCount' => 'user_count',
             'FPCount' => 'fp_count',
             'FaceCount' => 'face_count',
-            'TransactionCount' => 'transaction_count',
-            'AttLogCount' => 'transaction_count',
+            // Do NOT map AttLogCount/TransactionCount onto transaction_count —
+            // that column tracks punches saved by this app, not device flash totals.
             'IPAddress' => 'ip',
             'DeviceName' => 'device_name',
             '~DeviceName' => 'device_name',
@@ -154,7 +152,7 @@ class DeviceIdentityService
             }
 
             $column = $map[$k];
-            $updates[$column] = in_array($column, ['user_count', 'fp_count', 'face_count', 'transaction_count'], true)
+            $updates[$column] = in_array($column, ['user_count', 'fp_count', 'face_count'], true)
                 ? (int) $v
                 : $v;
         }

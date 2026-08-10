@@ -61,14 +61,22 @@ class CommandService
         return implode($eol, $lines) . $eol;
     }
 
-    public function recordReply(array $reply): ?ZktecoDeviceCommand
+    public function recordReply(array $reply, ?ZktecoDevice $device = null): ?ZktecoDeviceCommand
     {
         $id = $reply['ID'] ?? $reply['id'] ?? null;
         if ($id === null) {
             return null;
         }
 
-        $command = ZktecoDeviceCommand::find((int) $id);
+        $query = ZktecoDeviceCommand::query()->whereKey((int) $id);
+        if ($device) {
+            $query->where(function ($q) use ($device) {
+                $q->where('device_id', $device->id)
+                    ->orWhere('serial', $device->serial);
+            });
+        }
+
+        $command = $query->first();
         if (!$command) {
             return null;
         }
@@ -77,7 +85,7 @@ class CommandService
 
         $command->forceFill([
             'return_code' => $return,
-            'return_value' => $reply['CMD'] ?? null,
+            'return_value' => $reply['CMD'] ?? $reply['Cmd'] ?? null,
             'status' => ($return === null || $return >= 0)
                 ? ZktecoDeviceCommand::STATUS_DONE
                 : ZktecoDeviceCommand::STATUS_FAILED,

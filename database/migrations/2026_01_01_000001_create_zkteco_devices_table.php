@@ -19,7 +19,7 @@ return new class extends Migration
             $table->string('ip')->nullable();
             $table->integer('port')->default(443);
             $table->string('model')->nullable();
-            $table->string('serial')->nullable()->index();
+            $table->string('serial')->nullable()->unique('zkteco_devices_serial_unique');
             $table->string('firmware')->nullable();
             $table->string('push_version')->nullable();
             $table->string('platform')->nullable();

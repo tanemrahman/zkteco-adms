@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.4.2 — 2026-08-13
+
+### Changed
+- Schema columns/indexes now live in the create migrations (`devices` unique serial, `transactions` workcode + status unique, `device_users` verify_mode/is_blocked)
+- Replaced `000007_enhance_zkteco_schema` with `000007_create_zkteco_attphotos_table` only
+
 ## 1.4.1 — 2026-08-12
 
 ### Changed

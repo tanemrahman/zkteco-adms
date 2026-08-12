@@ -24,7 +24,7 @@ return new class extends Migration
             $table->string('terminal_sn')->nullable()->index();
             $table->timestamps();
 
-                $table->unique(['device_id', 'user_id', 'timestamp', 'status'], 'zkteco_transactions_unique');
+            $table->unique(['device_id', 'user_id', 'timestamp', 'status'], 'zkteco_transactions_unique');
         });
     }
 

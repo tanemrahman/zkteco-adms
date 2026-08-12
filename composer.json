@@ -43,6 +43,9 @@
             "aliases": {
                 "ZktecoAdms": "TanemRahman\\ZktecoAdms\\Facades\\ZktecoAdms"
             }
+        },
+        "branch-alias": {
+            "dev-main": "1.4.x-dev"
         }
     },
     "scripts": {

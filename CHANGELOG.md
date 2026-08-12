@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.4.1 — 2026-08-12
+
+### Changed
+- Merged migrations `000007`–`000010` into a single idempotent `2026_01_01_000007_enhance_zkteco_schema.php`
+
 ## 1.4.0 — 2026-08-12
 
 ### Added

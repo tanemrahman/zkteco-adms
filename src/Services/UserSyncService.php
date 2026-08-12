@@ -86,7 +86,7 @@ class UserSyncService
     }
 
     /**
-     * @param  array{pin:string|int, name?:string, privilege?:int, password?:string, card?:string, group?:string|int, timezone?:string}  $user
+     * @param  array{pin:string|int, name?:string, privilege?:int, password?:string, card?:string, group?:string|int, timezone?:string, verify?:int|string|null, verify_mode?:int|string|null}  $user
      */
     public function pushUser(ZktecoDevice $device, array $user)
     {

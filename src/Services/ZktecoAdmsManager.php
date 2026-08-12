@@ -94,6 +94,16 @@ class ZktecoAdmsManager
         return $this->commands->queryAttlog($this->resolve($device), $start, $end);
     }
 
+    public function blockUser(ZktecoDevice|string $device, string|int $pin): ZktecoDeviceCommand
+    {
+        return $this->commands->blockUser($this->resolve($device), $pin);
+    }
+
+    public function unblockUser(ZktecoDevice|string $device, string|int $pin): ZktecoDeviceCommand
+    {
+        return $this->commands->unblockUser($this->resolve($device), $pin);
+    }
+
     public function reboot(ZktecoDevice|string $device): ZktecoDeviceCommand
     {
         return $this->commands->reboot($this->resolve($device));

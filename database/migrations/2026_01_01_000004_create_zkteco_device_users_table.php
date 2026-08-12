@@ -23,6 +23,8 @@ return new class extends Migration
             $table->string('card')->nullable();
             $table->string('group')->nullable();
             $table->string('timezone')->nullable();
+            $table->integer('verify_mode')->nullable();
+            $table->boolean('is_blocked')->default(false);
             $table->boolean('has_fp')->default(false);
             $table->boolean('has_face')->default(false);
             $table->integer('fp_count')->default(0);

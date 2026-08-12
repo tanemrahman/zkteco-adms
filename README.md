@@ -111,7 +111,7 @@ Created automatically on `php artisan migrate`:
 | `zkteco_devices` | Registered devices (by serial `SN`) |
 | `zkteco_transactions` | Attendance punches (includes `workcode`) |
 | `zkteco_device_commands` | Commands waiting for the device |
-| `zkteco_device_users` | USERINFO roster (updated after device confirms commands, or via OPERLOG) |
+| `zkteco_device_users` | USERINFO roster (`verify_mode`, `is_blocked`, template flags; updated after device confirms commands, or via OPERLOG) |
 | `zkteco_attphotos` | Attendance photos saved from `ATTPHOTO` uploads |
 | `zkteco_heartbeat_logs` | `getrequest` polls (liveness) |
 | `zkteco_adms_logs` | Raw protocol audit trail |
@@ -233,9 +233,14 @@ ZktecoAdms::addUser('DEVICE-SN', [
     'privilege' => 0,      // 0=user, 14=admin
     'password' => '',
     'card' => '',
+    'verify_mode' => 15,   // optional USERINFO Verify= (firmware-dependent)
 ]);
 
 ZktecoAdms::deleteUser('DEVICE-SN', 1001);
+
+// Soft punch-block: remove from device, keep local roster row (is_blocked=true)
+ZktecoAdms::blockUser('DEVICE-SN', 1001);
+ZktecoAdms::unblockUser('DEVICE-SN', 1001); // clears flag + re-queues USERINFO
 
 // Fingerprint / face template push (raw TMP from another device or export)
 ZktecoAdms::addFingerprint('DEVICE-SN', [

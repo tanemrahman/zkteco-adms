@@ -131,9 +131,15 @@ class CommandService
             if (($fields['PIN'] ?? '') === '') {
                 return;
             }
-            app(AdmsService::class)->upsertDeviceUser($device, $fields);
+            $user = app(AdmsService::class)->upsertDeviceUser($device, $fields);
+            // Successful push means the user is enrolled on the device again.
+            if ((bool) ($user->is_blocked ?? false)) {
+                $user->forceFill(['is_blocked' => false])->save();
+            }
             $device->forceFill([
-                'user_count' => ZktecoDeviceUser::where('serial', $device->serial)->count(),
+                'user_count' => ZktecoDeviceUser::where('serial', $device->serial)
+                    ->where(fn ($q) => $q->where('is_blocked', false)->orWhereNull('is_blocked'))
+                    ->count(),
             ])->saveQuietly();
 
             return;
@@ -145,9 +151,29 @@ class CommandService
             if ($pin === '') {
                 return;
             }
-            ZktecoDeviceUser::where('serial', $device->serial)->where('pin', $pin)->delete();
+
+            $user = ZktecoDeviceUser::query()
+                ->where('serial', $device->serial)
+                ->where('pin', $pin)
+                ->first();
+
+            // Soft-block: keep the local roster row so apps can unblock later.
+            if ($user && (bool) ($user->is_blocked ?? false)) {
+                $user->forceFill([
+                    'has_fp' => false,
+                    'has_face' => false,
+                    'fp_count' => 0,
+                    'face_count' => 0,
+                    'synced_at' => now(),
+                ])->save();
+            } else {
+                ZktecoDeviceUser::where('serial', $device->serial)->where('pin', $pin)->delete();
+            }
+
             $device->forceFill([
-                'user_count' => ZktecoDeviceUser::where('serial', $device->serial)->count(),
+                'user_count' => ZktecoDeviceUser::where('serial', $device->serial)
+                    ->where(fn ($q) => $q->where('is_blocked', false)->orWhereNull('is_blocked'))
+                    ->count(),
             ])->saveQuietly();
 
             return;
@@ -256,7 +282,7 @@ class CommandService
     */
 
     /**
-     * @param  array{pin:string|int, name?:string, privilege?:int, password?:string, card?:string, group?:string|int, timezone?:string}  $user
+     * @param  array{pin:string|int, name?:string, privilege?:int, password?:string, card?:string, group?:string|int, timezone?:string, verify?:int|string|null, verify_mode?:int|string|null}  $user
      */
     public function buildUpdateUser(array $user): string
     {
@@ -269,6 +295,11 @@ class CommandService
             'Grp=' . ($user['group'] ?? 1),
             'TZ=' . ($user['timezone'] ?? '0000000000000000'),
         ];
+
+        $verify = $user['verify_mode'] ?? $user['verify'] ?? null;
+        if ($verify !== null && $verify !== '') {
+            $fields[] = 'Verify=' . (int) $verify;
+        }
 
         return 'DATA UPDATE USERINFO ' . implode("\t", $fields);
     }
@@ -401,7 +432,7 @@ class CommandService
      * Queue USERINFO to the device. Local `zkteco_device_users` is updated only
      * after a successful `devicecmd` reply (see applySuccessfulCommand).
      *
-     * @param  array{pin:string|int, name?:string, privilege?:int, password?:string, card?:string, group?:string|int, timezone?:string}  $user
+     * @param  array{pin:string|int, name?:string, privilege?:int, password?:string, card?:string, group?:string|int, timezone?:string, verify?:int|string|null, verify_mode?:int|string|null}  $user
      */
     public function addUser(ZktecoDevice $device, array $user): ZktecoDeviceCommand
     {
@@ -411,7 +442,7 @@ class CommandService
     /**
      * Queue many USERINFO updates (one command per user).
      *
-     * @param  array<int,array{pin:string|int, name?:string, privilege?:int, password?:string, card?:string, group?:string|int, timezone?:string}>  $users
+     * @param  array<int,array{pin:string|int, name?:string, privilege?:int, password?:string, card?:string, group?:string|int, timezone?:string, verify?:int|string|null, verify_mode?:int|string|null}>  $users
      * @return array<int,ZktecoDeviceCommand>
      */
     public function addUsers(ZktecoDevice $device, array $users): array
@@ -422,6 +453,60 @@ class CommandService
         }
 
         return $commands;
+    }
+
+    /**
+     * Soft-block punches: remove the user from the device but keep the local roster
+     * row with `is_blocked=true` so apps can unblock later.
+     */
+    public function blockUser(ZktecoDevice $device, string|int $pin): ZktecoDeviceCommand
+    {
+        $pin = (string) $pin;
+
+        $user = ZktecoDeviceUser::query()
+            ->where('serial', $device->serial)
+            ->where('pin', $pin)
+            ->first();
+
+        if ($user) {
+            $user->forceFill(['is_blocked' => true])->save();
+        } else {
+            ZktecoDeviceUser::query()->create([
+                'device_id' => $device->id,
+                'serial' => $device->serial,
+                'pin' => $pin,
+                'is_blocked' => true,
+                'synced_at' => now(),
+            ]);
+        }
+
+        return $this->deleteUser($device, $pin);
+    }
+
+    /**
+     * Clear the soft-block flag and re-queue USERINFO from the local roster row.
+     */
+    public function unblockUser(ZktecoDevice $device, string|int $pin): ZktecoDeviceCommand
+    {
+        $pin = (string) $pin;
+
+        $user = ZktecoDeviceUser::query()
+            ->where('serial', $device->serial)
+            ->where('pin', $pin)
+            ->firstOrFail();
+
+        $user->forceFill(['is_blocked' => false])->save();
+
+        return $this->addUser($device, [
+            'pin' => $user->pin,
+            'name' => (string) ($user->name ?? ''),
+            'privilege' => (int) ($user->privilege ?? 0),
+            'password' => (string) ($user->password ?? ''),
+            'card' => (string) ($user->card ?? ''),
+            'group' => $user->group ?? 1,
+            'timezone' => $user->timezone ?? '0000000000000000',
+            'verify_mode' => $user->verify_mode,
+        ]);
     }
 
     public function deleteUser(ZktecoDevice $device, string|int $pin): ZktecoDeviceCommand

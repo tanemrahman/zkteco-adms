@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.4.0 — 2026-08-12
+
+### Added
+- `zkteco_device_users.verify_mode` (USERINFO `Verify=`) and `is_blocked` soft punch-block flag
+- Facade helpers: `ZktecoAdms::blockUser()` / `ZktecoAdms::unblockUser()`
+- `buildUpdateUser()` / `addUser()` accept optional `verify` / `verify_mode`
+
+### Changed
+- Successful `DATA DELETE USERINFO` keeps the local roster row when `is_blocked=true` (apps can unblock later)
+- OPERLOG / USERINFO upsert maps `Verify` → `verify_mode` without clearing `is_blocked`
+
 ## 1.3.0 — 2026-08-10
 
 ### Fixed

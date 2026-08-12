@@ -63,6 +63,25 @@ class ProtocolParsingTest extends TestCase
         $this->assertStringContainsString('PIN=1001', $cmd);
         $this->assertStringContainsString('Name=Karim', $cmd);
         $this->assertStringContainsString('Card=ABC', $cmd);
+        $this->assertStringNotContainsString('Verify=', $cmd);
+    }
+
+    public function test_build_update_user_includes_verify_mode(): void
+    {
+        $svc = new CommandService();
+        $cmd = $svc->buildUpdateUser([
+            'pin' => 10,
+            'name' => 'Tanem',
+            'verify_mode' => 15,
+        ]);
+
+        $this->assertStringContainsString('Verify=15', $cmd);
+
+        $cmd2 = $svc->buildUpdateUser([
+            'pin' => 11,
+            'verify' => 1,
+        ]);
+        $this->assertStringContainsString('Verify=1', $cmd2);
     }
 
     public function test_encode_device_time(): void

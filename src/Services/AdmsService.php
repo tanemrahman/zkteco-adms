@@ -346,18 +346,38 @@ class AdmsService
     {
         $pin = $fields['PIN'] ?? $fields['Pin'] ?? null;
 
+        $attributes = [
+            'device_id' => $device->id,
+            'name' => $fields['Name'] ?? null,
+            'privilege' => isset($fields['Pri']) ? (int) $fields['Pri'] : 0,
+            'password' => $fields['Passwd'] ?? null,
+            'card' => $fields['Card'] ?? null,
+            'group' => $fields['Grp'] ?? null,
+            'timezone' => $fields['TZ'] ?? null,
+            'synced_at' => now(),
+        ];
+
+        if (array_key_exists('Verify', $fields) || array_key_exists('verify', $fields)) {
+            $verify = $fields['Verify'] ?? $fields['verify'];
+            $attributes['verify_mode'] = ($verify === null || $verify === '')
+                ? null
+                : (int) $verify;
+        }
+
+        // Never clear soft-block from device OPERLOG/USERINFO uploads.
+        $existing = ZktecoDeviceUser::query()
+            ->where('serial', $device->serial)
+            ->where('pin', (string) $pin)
+            ->first();
+
+        if ($existing && (bool) ($existing->is_blocked ?? false)) {
+            // Device re-uploaded the user — clear block only when explicitly pushed via unblock.
+            // Keep is_blocked as-is so app-controlled block wins over stale OPERLOG.
+        }
+
         return ZktecoDeviceUser::updateOrCreate(
             ['serial' => $device->serial, 'pin' => (string) $pin],
-            [
-                'device_id' => $device->id,
-                'name' => $fields['Name'] ?? null,
-                'privilege' => isset($fields['Pri']) ? (int) $fields['Pri'] : 0,
-                'password' => $fields['Passwd'] ?? null,
-                'card' => $fields['Card'] ?? null,
-                'group' => $fields['Grp'] ?? null,
-                'timezone' => $fields['TZ'] ?? null,
-                'synced_at' => now(),
-            ]
+            $attributes
         );
     }
 

@@ -188,7 +188,7 @@ class CommandService
 
         if (str_starts_with($body, 'DATA DELETE FINGERTMP ')) {
             $fields = $this->parseCommandFields(substr($body, strlen('DATA DELETE FINGERTMP ')));
-            $this->decrementTemplateFlag($device, (string) ($fields['PIN'] ?? ''), 'fp');
+            $this->decrementTemplateFlag($device, (string) ($fields['PIN'] ?? ''), 'fp', (string) ($fields['FID'] ?? '0'));
 
             return;
         }
@@ -202,7 +202,7 @@ class CommandService
 
         if (str_starts_with($body, 'DATA DELETE FACE ')) {
             $fields = $this->parseCommandFields(substr($body, strlen('DATA DELETE FACE ')));
-            $this->decrementTemplateFlag($device, (string) ($fields['PIN'] ?? ''), 'face');
+            $this->decrementTemplateFlag($device, (string) ($fields['PIN'] ?? ''), 'face', (string) ($fields['FID'] ?? '0'));
         }
     }
 
@@ -225,7 +225,7 @@ class CommandService
         return $fields;
     }
 
-    protected function decrementTemplateFlag(ZktecoDevice $device, string $pin, string $kind): void
+    protected function decrementTemplateFlag(ZktecoDevice $device, string $pin, string $kind, string $fid = '0'): void
     {
         if ($pin === '') {
             return;
@@ -240,13 +240,15 @@ class CommandService
             return;
         }
 
-        if ($kind === 'fp') {
-            $user->fp_count = max(0, (int) $user->fp_count - 1);
-            $user->has_fp = $user->fp_count > 0;
-        } else {
-            $user->face_count = max(0, (int) $user->face_count - 1);
-            $user->has_face = $user->face_count > 0;
-        }
+        $fidsColumn = $kind === 'fp' ? 'fp_fids' : 'face_fids';
+        $countColumn = $kind === 'fp' ? 'fp_count' : 'face_count';
+        $hasColumn = $kind === 'fp' ? 'has_fp' : 'has_face';
+
+        $fids = array_values(array_filter($user->{$fidsColumn} ?? [], fn ($f) => (string) $f !== $fid));
+
+        $user->{$fidsColumn} = $fids;
+        $user->{$countColumn} = count($fids);
+        $user->{$hasColumn} = count($fids) > 0;
 
         $user->synced_at = now();
         $user->save();

@@ -12,7 +12,7 @@ class ZktecoDeviceUser extends Model
     protected $fillable = [
         'device_id', 'serial', 'pin', 'name', 'privilege', 'password',
         'card', 'group', 'timezone', 'verify_mode', 'is_blocked',
-        'has_fp', 'has_face', 'fp_count', 'face_count', 'synced_at',
+        'has_fp', 'has_face', 'fp_count', 'face_count', 'fp_fids', 'face_fids', 'synced_at',
     ];
 
     protected $casts = [
@@ -23,6 +23,8 @@ class ZktecoDeviceUser extends Model
         'has_face' => 'boolean',
         'fp_count' => 'integer',
         'face_count' => 'integer',
+        'fp_fids' => 'array',
+        'face_fids' => 'array',
         'synced_at' => 'datetime',
     ];
 

@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.4.3 — 2026-08-18
+
+### Fixed
+- `fp_count`/`face_count` no longer inflate on repeated syncs. Templates are now tracked
+  by FID (`zkteco_device_users.fp_fids` / `face_fids`, new nullable JSON columns) and the
+  count is derived from the number of distinct FIDs, instead of an unconditional
+  increment on every uploaded template row — the device re-uploads its full template
+  table on every OPERLOG sync, so the old counter grew every time even with zero real
+  enrollment changes.
+- `DATA DELETE FINGERTMP` / `DATA DELETE FACE` command confirmations now remove the
+  specific FID from the tracked set (instead of a blind `count - 1`), so counts stay
+  accurate even with multiple templates per user.
+
 ## 1.4.2 — 2026-08-13
 
 ### Changed

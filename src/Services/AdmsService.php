@@ -394,23 +394,43 @@ class AdmsService
         ]);
 
         $user->device_id = $device->id;
+        $fid = (string) ($fields['FID'] ?? $fields['Fid'] ?? 0);
 
         if (in_array($tag, ['FP', 'FINGERPRINT', 'FINGERTMP', 'BIODATA_FP'], true)) {
-            $user->has_fp = true;
-            $user->fp_count = (int) $user->fp_count + 1;
+            $this->addTemplateFid($user, 'fp', $fid);
         } elseif (in_array($tag, ['FACE', 'BIOPHOTO', 'BIODATA_FACE', 'BIODATA'], true)) {
             // Bare BIODATA is usually face on modern Push firmware; FP uses FINGERTMP/FP.
             if ($tag === 'BIODATA' && isset($fields['Type']) && stripos((string) $fields['Type'], 'fp') !== false) {
-                $user->has_fp = true;
-                $user->fp_count = (int) $user->fp_count + 1;
+                $this->addTemplateFid($user, 'fp', $fid);
             } else {
-                $user->has_face = true;
-                $user->face_count = (int) $user->face_count + 1;
+                $this->addTemplateFid($user, 'face', $fid);
             }
         }
 
         $user->synced_at = now();
         $user->save();
+    }
+
+    /**
+     * Record a template by FID instead of blindly incrementing a counter, so
+     * re-uploading the device's existing (unchanged) templates on every sync
+     * does not inflate the count. Count reflects the number of distinct FIDs
+     * currently known for this user.
+     */
+    private function addTemplateFid(ZktecoDeviceUser $user, string $kind, string $fid): void
+    {
+        $fidsColumn = $kind === 'fp' ? 'fp_fids' : 'face_fids';
+        $countColumn = $kind === 'fp' ? 'fp_count' : 'face_count';
+        $hasColumn = $kind === 'fp' ? 'has_fp' : 'has_face';
+
+        $fids = $user->{$fidsColumn} ?? [];
+        if (! in_array($fid, $fids, true)) {
+            $fids[] = $fid;
+        }
+
+        $user->{$fidsColumn} = array_values($fids);
+        $user->{$countColumn} = count($fids);
+        $user->{$hasColumn} = count($fids) > 0;
     }
 
     public function updateStamp(ZktecoDevice $device, string $table, ?string $stamp): void

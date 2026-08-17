@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.4.4 — 2026-08-18
+
+### Added
+- `--prune` now also deletes attendance photos (`zkteco_attphotos`) older than
+  `logging.photo_retention_days` (default 30, `ZKTECO_ADMS_PHOTO_RETENTION_DAYS`) —
+  both the stored file and the DB row. Photos previously had no retention at all
+  and would grow disk usage unboundedly.
+
 ## 1.4.3 — 2026-08-18
 
 ### Fixed

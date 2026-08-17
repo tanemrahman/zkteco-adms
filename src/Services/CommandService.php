@@ -4,8 +4,10 @@ namespace TanemRahman\ZktecoAdms\Services;
 
 use DateTimeInterface;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Storage;
 use TanemRahman\ZktecoAdms\Events\CommandCompleted;
 use TanemRahman\ZktecoAdms\Models\ZktecoAdmsLog;
+use TanemRahman\ZktecoAdms\Models\ZktecoAttphoto;
 use TanemRahman\ZktecoAdms\Models\ZktecoDevice;
 use TanemRahman\ZktecoAdms\Models\ZktecoDeviceCommand;
 use TanemRahman\ZktecoAdms\Models\ZktecoDeviceUser;
@@ -270,11 +272,32 @@ class CommandService
     {
         $logDays = (int) config('zkteco-adms.logging.retention_days', 14);
         $hbDays = (int) config('zkteco-adms.logging.heartbeat_retention_days', 3);
+        $photoDays = (int) config('zkteco-adms.logging.photo_retention_days', 30);
 
         $logs = ZktecoAdmsLog::where('created_at', '<', now()->subDays($logDays))->delete();
         $heartbeats = ZktecoHeartbeatLog::where('created_at', '<', now()->subDays($hbDays))->delete();
+        $photos = $this->prunePhotos($photoDays);
 
-        return compact('logs', 'heartbeats');
+        return compact('logs', 'heartbeats', 'photos');
+    }
+
+    /** Deletes the stored image file alongside its row — a DB-only delete would just leak disk space. */
+    protected function prunePhotos(int $days): int
+    {
+        $deleted = 0;
+
+        ZktecoAttphoto::where('created_at', '<', now()->subDays($days))
+            ->chunkById(200, function (Collection $photos) use (&$deleted) {
+                foreach ($photos as $photo) {
+                    if ($photo->disk && $photo->path) {
+                        Storage::disk($photo->disk)->delete($photo->path);
+                    }
+                    $photo->delete();
+                    $deleted++;
+                }
+            });
+
+        return $deleted;
     }
 
     /*

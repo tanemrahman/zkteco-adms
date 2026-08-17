@@ -14,7 +14,7 @@ class AdmsCommandsCommand extends Command
         {--sn= : Device serial}
         {--list : List pending/sent commands}
         {--requeue-stale : Requeue stuck "sent" commands}
-        {--prune : Prune protocol + heartbeat logs}
+        {--prune : Prune protocol + heartbeat logs + old attendance photos}
         {--enqueue= : info|reboot|check|sync-time|clear-log|clear-data|query-users}
         {--add-user= : PIN to add (requires --sn and optional --user-name)}
         {--user-name= : Name for --add-user}
@@ -30,7 +30,7 @@ class AdmsCommandsCommand extends Command
 
         if ($this->option('prune')) {
             $r = $commands->pruneLogs();
-            $this->info("Pruned {$r['logs']} protocol log(s), {$r['heartbeats']} heartbeat(s).");
+            $this->info("Pruned {$r['logs']} protocol log(s), {$r['heartbeats']} heartbeat(s), {$r['photos']} photo(s).");
         }
 
         if ($pin = $this->option('add-user')) {

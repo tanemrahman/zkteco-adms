@@ -10,7 +10,7 @@ class AdmsMaintenanceCommand extends Command
 {
     protected $signature = 'zkteco-adms:maintain
         {--requeue-stale : Requeue commands stuck in sent status}
-        {--prune : Prune old protocol + heartbeat logs}
+        {--prune : Prune old protocol + heartbeat logs + attendance photos}
         {--list-devices : List registered ADMS devices}';
 
     protected $description = 'Maintain ZKTeco ADMS command queue and logs.';
@@ -46,7 +46,7 @@ class AdmsMaintenanceCommand extends Command
 
         if ($this->option('prune')) {
             $result = $commands->pruneLogs();
-            $this->info("Pruned {$result['logs']} protocol log(s), {$result['heartbeats']} heartbeat(s).");
+            $this->info("Pruned {$result['logs']} protocol log(s), {$result['heartbeats']} heartbeat(s), {$result['photos']} photo(s).");
         }
 
         if (!$this->option('list-devices') && !$this->option('requeue-stale') && !$this->option('prune')) {

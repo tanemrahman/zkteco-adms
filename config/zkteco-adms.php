@@ -65,6 +65,8 @@ return [
         'max_body' => (int) env('ZKTECO_ADMS_LOG_MAX_BODY', 10000),
         'retention_days' => (int) env('ZKTECO_ADMS_LOG_RETENTION_DAYS', 14),
         'heartbeat_retention_days' => (int) env('ZKTECO_ADMS_HEARTBEAT_RETENTION_DAYS', 3),
+        // Attendance photos are files on disk, not just DB rows — prune deletes both.
+        'photo_retention_days' => (int) env('ZKTECO_ADMS_PHOTO_RETENTION_DAYS', 30),
     ],
 
     'commands' => [

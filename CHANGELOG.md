@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.4.5 — 2026-08-18
+
+### Fixed
+- Template sync no longer throws `Unknown column 'fp_fids'` when the host app has not
+  run the 1.4.3 migration yet. `fp_fids`/`face_fids` writes are now guarded by a
+  one-shot column check; without the columns the package falls back to the pre-1.4.3
+  counting instead of failing every uploaded template.
+
 ## 1.4.4 — 2026-08-18
 
 ### Added

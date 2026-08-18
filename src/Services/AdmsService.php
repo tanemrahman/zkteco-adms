@@ -6,6 +6,7 @@ use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use TanemRahman\ZktecoAdms\Events\AttendancePhotoReceived;
 use TanemRahman\ZktecoAdms\Events\DeviceRegistered;
@@ -423,6 +424,16 @@ class AdmsService
         $countColumn = $kind === 'fp' ? 'fp_count' : 'face_count';
         $hasColumn = $kind === 'fp' ? 'has_fp' : 'has_face';
 
+        // The FID columns arrive in a migration, which a host app may not have run yet.
+        // Writing them blindly would throw on every template upload, so fall back to the
+        // pre-1.4.3 counting instead of taking the whole sync down.
+        if (! self::supportsTemplateFids()) {
+            $user->{$countColumn} = (int) $user->{$countColumn} + 1;
+            $user->{$hasColumn} = true;
+
+            return;
+        }
+
         $fids = $user->{$fidsColumn} ?? [];
         if (! in_array($fid, $fids, true)) {
             $fids[] = $fid;
@@ -431,6 +442,25 @@ class AdmsService
         $user->{$fidsColumn} = array_values($fids);
         $user->{$countColumn} = count($fids);
         $user->{$hasColumn} = count($fids) > 0;
+    }
+
+    /**
+     * Whether the per-FID tracking columns exist. Resolved once per process — the answer
+     * cannot change inside a request, and this runs on every uploaded template.
+     */
+    public static function supportsTemplateFids(): bool
+    {
+        static $supported = null;
+
+        if ($supported === null) {
+            try {
+                $supported = Schema::hasColumn('zkteco_device_users', 'fp_fids');
+            } catch (\Throwable) {
+                $supported = false;
+            }
+        }
+
+        return $supported;
     }
 
     public function updateStamp(ZktecoDevice $device, string $table, ?string $stamp): void

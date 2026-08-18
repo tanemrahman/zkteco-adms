@@ -246,11 +246,17 @@ class CommandService
         $countColumn = $kind === 'fp' ? 'fp_count' : 'face_count';
         $hasColumn = $kind === 'fp' ? 'has_fp' : 'has_face';
 
-        $fids = array_values(array_filter($user->{$fidsColumn} ?? [], fn ($f) => (string) $f !== $fid));
+        // Host app may not have run the FID migration yet — degrade to a plain decrement
+        // rather than throwing (see AdmsService::supportsTemplateFids).
+        if (AdmsService::supportsTemplateFids()) {
+            $fids = array_values(array_filter($user->{$fidsColumn} ?? [], fn ($f) => (string) $f !== $fid));
+            $user->{$fidsColumn} = $fids;
+            $user->{$countColumn} = count($fids);
+        } else {
+            $user->{$countColumn} = max(0, (int) $user->{$countColumn} - 1);
+        }
 
-        $user->{$fidsColumn} = $fids;
-        $user->{$countColumn} = count($fids);
-        $user->{$hasColumn} = count($fids) > 0;
+        $user->{$hasColumn} = (int) $user->{$countColumn} > 0;
 
         $user->synced_at = now();
         $user->save();
